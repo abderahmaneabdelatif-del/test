@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Payment received — Max Combat Assistant</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&family=Orbitron:wght@700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+    <div class="pay-success-wrap">
+        <div class="dash-container pay-success-card">
+            <h2>PAYMENT RECEIVED</h2>
+            <p class="dash-lead" id="orderLine"></p>
+            <p class="pay-status-line" id="orderStatusLine"></p>
+            <p class="spec-hint" style="text-align:center;margin-top:16px;">
+                Your license is being issued automatically. Within a few minutes, check the email you used at checkout
+                and the <a href="dashboard.html" style="color:var(--accent);font-weight:600;">License Portal</a> with your new key.
+            </p>
+            <div style="margin-top:28px;">
+                <a href="index.html" class="btn-action">Back to home</a>
+                <a href="dashboard.html" class="btn" style="margin-left:12px;">Open portal</a>
+            </div>
+        </div>
+    </div>
+    <script>
+        (function () {
+            const p = new URLSearchParams(location.search);
+            const order = p.get('order');
+            const orderLine = document.getElementById('orderLine');
+            const statusLine = document.getElementById('orderStatusLine');
+
+            orderLine.textContent = order
+                ? 'Order reference: ' + order
+                : 'Thank you for your purchase.';
+
+            if (!order) {
+                statusLine.textContent = '';
+                return;
+            }
+
+            async function refreshStatus() {
+                try {
+                    const res = await fetch('/api/order/' + encodeURIComponent(order));
+                    if (!res.ok) {
+                        statusLine.textContent = 'Order status is not available yet. Please check again in a minute.';
+                        return;
+                    }
+                    const data = await res.json();
+                    if (data.status === 'fulfilled') {
+                        statusLine.innerHTML = data.licenseKey
+                            ? 'Status: <strong>Fulfilled</strong> - Your key is ready: <code>' + data.licenseKey + '</code>'
+                            : 'Status: <strong>Fulfilled</strong> - Your key is ready in the portal.';
+                        return;
+                    }
+                    statusLine.innerHTML = 'Status: <strong>Pending confirmation</strong>. Blockchain confirmation can take a few minutes.';
+                } catch (_) {
+                    statusLine.textContent = 'Could not refresh order status right now.';
+                }
+            }
+
+            refreshStatus();
+            setInterval(refreshStatus, 15000);
+        })();
+    </script>
+</body>
+</html>

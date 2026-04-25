@@ -1,0 +1,220 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Max Combat Assistant - Admin</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Orbitron:wght@700;900&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="css/style.css">
+    <link rel="stylesheet" href="css/admin.css">
+</head>
+<body class="admin-body">
+    <nav class="site-nav admin-topbar">
+        <div class="site-nav-inner">
+            <a href="index.html" class="logo"><span class="logo-mark" aria-hidden="true">⚔</span> Max Combat <span class="logo-accent">Assistant</span></a>
+            <div class="nav-links">
+                <a href="index.html">Website</a>
+                <a href="dashboard.html">License Portal</a>
+                <a href="#" class="btn-action" id="adminLogoutBtn">Logout</a>
+            </div>
+        </div>
+    </nav>
+
+    <main class="admin-wrap">
+        <section class="admin-hero card card--panel">
+            <p class="admin-hero-kicker">Control Center</p>
+            <h1 class="admin-hero-title">Professional Admin Dashboard</h1>
+            <p class="admin-hero-text">Manage licenses, monitor orders, and review audit trails from one secure workspace.</p>
+        </section>
+
+        <section class="admin-card card card--panel" id="adminAuthCard">
+            <h2 class="admin-title">Admin Access</h2>
+            <p class="admin-subtitle">Enter your admin token from server environment variable <code>ADMIN_TOKEN</code>.</p>
+            <input id="adminTokenInput" class="input-box admin-token-input" type="password" placeholder="ADMIN_TOKEN" autocomplete="off" spellcheck="false">
+            <button id="adminLoginBtn" class="btn btn-block" type="button">Sign in</button>
+            <p id="adminAuthMsg" class="admin-message"></p>
+        </section>
+
+        <section class="admin-panel" id="adminPanel" hidden>
+            <aside class="admin-sidebar card card--panel">
+                <div class="admin-session-line" id="adminSessionLine"></div>
+                <nav class="admin-side-nav" id="adminSideNav">
+                    <a href="#admin-overview" class="admin-nav-link is-active">Overview</a>
+                    <a href="#admin-create" class="admin-nav-link">Create License</a>
+                    <a href="#admin-orders" class="admin-nav-link">Orders</a>
+                    <a href="#admin-licenses" class="admin-nav-link">Licenses</a>
+                    <a href="#admin-audit" class="admin-nav-link">Audit Log</a>
+                    <a href="#admin-config" class="admin-nav-link">Configuration</a>
+                </nav>
+                <div class="admin-side-meta">
+                    <span>Last refresh</span>
+                    <strong id="adminLastRefresh">-</strong>
+                </div>
+            </aside>
+
+            <div class="admin-content">
+            <div class="admin-kpis-section" id="admin-overview">
+                <h3 class="admin-section-title">Overview</h3>
+                <div class="admin-kpis" id="adminKpis"></div>
+            </div>
+
+            <div class="admin-command-bar card card--panel">
+                <div class="admin-command-left">
+                    <input id="adminGlobalSearch" class="input-box admin-small-input" type="search" placeholder="Global search: order, key, email, spec">
+                    <p class="admin-command-hint">Tip: press <kbd>Ctrl</kbd> + <kbd>K</kbd> to focus search</p>
+                </div>
+                <div class="admin-command-right">
+                    <label class="admin-toggle">
+                        <input id="adminAutoRefresh" type="checkbox">
+                        <span>Auto refresh (60s)</span>
+                    </label>
+                    <button id="adminQuickRefresh" class="btn" type="button">Refresh All</button>
+                </div>
+            </div>
+
+            <div class="admin-grid">
+                <div class="admin-card card card--panel" id="admin-create">
+                    <h3 class="admin-section-title">Create License</h3>
+                    <div class="admin-form-grid">
+                        <label class="admin-label">Plan
+                            <select id="createPlan" class="spec-select">
+                                <option value="monthly">Monthly</option>
+                                <option value="monthly_per_spec">Monthly Per Spec</option>
+                                <option value="lifetime">Lifetime</option>
+                            </select>
+                        </label>
+                        <label class="admin-label">Months
+                            <input id="createMonths" class="input-box admin-small-input" type="number" min="1" max="36" value="1">
+                        </label>
+                        <label class="admin-label">Email
+                            <input id="createEmail" class="input-box admin-small-input" type="email" placeholder="customer@email.com">
+                        </label>
+                        <label class="admin-label" style="grid-column: 1 / -1;">Select Specs
+                            <div id="createSpecsContainer" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 8px; margin-top: 8px; padding: 12px; background: rgba(8, 12, 24, 0.75); border: 1px solid rgba(100, 140, 255, 0.12); border-radius: 10px; max-height: 200px; overflow-y: auto;">
+                                <div class="admin-message" style="margin: 0;">Loading specs...</div>
+                            </div>
+                        </label>
+                    </div>
+                    <button id="createLicenseBtn" class="btn" type="button">Create</button>
+                    <p id="createLicenseMsg" class="admin-message"></p>
+                </div>
+
+                <div class="admin-card card card--panel" id="admin-config">
+                    <h3 class="admin-section-title">Application Configuration</h3>
+                    <div class="admin-form-grid">
+                        <label class="admin-label">Monthly Price Per Spec (USD)
+                            <input id="configPriceInput" class="input-box admin-small-input" type="number" min="0" step="1">
+                        </label>
+                    </div>
+                    <button id="updateConfigBtn" class="btn" type="button">Save Configuration</button>
+                    <p id="updateConfigMsg" class="admin-message"></p>
+                </div>
+
+                <div class="admin-card card card--panel" id="admin-orders">
+                    <h3 class="admin-section-title">Orders Monitor <span class="admin-section-meta" id="ordersCount">0</span></h3>
+                    <div class="admin-toolbar">
+                        <input id="ordersSearch" class="input-box admin-small-input" type="search" placeholder="Search order, email, key">
+                        <select id="ordersStatus" class="spec-select">
+                            <option value="">All statuses</option>
+                            <option value="pending">Pending</option>
+                            <option value="fulfilled">Fulfilled</option>
+                        </select>
+                        <select id="ordersSort" class="spec-select">
+                            <option value="createdAt:desc" selected>Sort: Newest</option>
+                            <option value="createdAt:asc">Sort: Oldest</option>
+                            <option value="amountUsd:desc">Sort: Amount (High)</option>
+                            <option value="amountUsd:asc">Sort: Amount (Low)</option>
+                            <option value="status:asc">Sort: Status</option>
+                        </select>
+                        <button id="ordersSelectVisibleBtn" class="btn-action" type="button">Select visible</button>
+                        <button id="refreshOrdersBtn" class="btn-action" type="button">Refresh</button>
+                        <button id="bulkDeleteOrdersBtn" class="btn-action admin-danger" type="button" disabled>Bulk delete</button>
+                        <button id="exportOrdersBtn" class="btn-action" type="button">Export CSV</button>
+                    </div>
+                    <div class="admin-list" id="ordersList" aria-live="polite"></div>
+                    <div class="admin-pager">
+                        <button class="btn-action" type="button" id="ordersPrev">Prev</button>
+                        <span class="admin-pager-text" id="ordersPageText">Page 1</span>
+                        <button class="btn-action" type="button" id="ordersNext">Next</button>
+                        <select class="spec-select admin-page-size" id="ordersPageSize">
+                            <option value="10">10</option>
+                            <option value="25" selected>25</option>
+                            <option value="50">50</option>
+                            <option value="100">100</option>
+                        </select>
+                    </div>
+                </div>
+            </div>
+
+            <div class="admin-card card card--panel" id="admin-licenses">
+                <h3 class="admin-section-title">License Inventory <span class="admin-section-meta" id="licensesCount">0</span></h3>
+                <div class="admin-toolbar">
+                    <input id="licensesSearch" class="input-box admin-small-input" type="search" placeholder="Search key, email, plan, order">
+                    <select id="licensesPlan" class="spec-select">
+                        <option value="">All plans</option>
+                        <option value="monthly">Monthly</option>
+                        <option value="monthly_per_spec">Monthly Per Spec</option>
+                        <option value="lifetime">Lifetime</option>
+                    </select>
+                    <select id="licensesStatus" class="spec-select">
+                        <option value="">All status</option>
+                        <option value="active">Active</option>
+                        <option value="expired">Expired</option>
+                        <option value="disabled">Disabled</option>
+                        <option value="bound">Bound</option>
+                        <option value="unbound">Unbound</option>
+                    </select>
+                    <select id="licensesSort" class="spec-select">
+                        <option value="createdAt:desc" selected>Sort: Newest</option>
+                        <option value="createdAt:asc">Sort: Oldest</option>
+                        <option value="expiresAt:asc">Sort: Expiring soon</option>
+                        <option value="expiresAt:desc">Sort: Expiring last</option>
+                        <option value="plan:asc">Sort: Plan</option>
+                    </select>
+                    <button id="licensesSelectVisibleBtn" class="btn-action" type="button">Select visible</button>
+                    <button id="refreshLicensesBtn" class="btn-action" type="button">Refresh</button>
+                    <button id="bulkDeleteLicensesBtn" class="btn-action admin-danger" type="button" disabled>Bulk delete</button>
+                    <button id="exportLicensesBtn" class="btn-action" type="button">Export CSV</button>
+                </div>
+                <div class="admin-list" id="licensesList" aria-live="polite"></div>
+                <div class="admin-pager">
+                    <button class="btn-action" type="button" id="licensesPrev">Prev</button>
+                    <span class="admin-pager-text" id="licensesPageText">Page 1</span>
+                    <button class="btn-action" type="button" id="licensesNext">Next</button>
+                    <select class="spec-select admin-page-size" id="licensesPageSize">
+                        <option value="10">10</option>
+                        <option value="25" selected>25</option>
+                        <option value="50">50</option>
+                        <option value="100">100</option>
+                    </select>
+                </div>
+            </div>
+
+            <div class="admin-card card card--panel" id="admin-audit">
+                <h3 class="admin-section-title">Audit Timeline <span class="admin-section-meta" id="auditCount">0</span></h3>
+                <div class="admin-toolbar admin-toolbar--compact">
+                    <input id="auditLimit" class="input-box admin-small-input" type="number" min="10" max="500" value="100" placeholder="Limit">
+                    <button id="refreshAuditBtn" class="btn-action" type="button">Refresh</button>
+                    <button id="exportAuditBtn" class="btn-action" type="button">Export CSV</button>
+                </div>
+                <div class="admin-table-wrap">
+                    <table class="admin-table" id="auditTable">
+                        <thead>
+                            <tr>
+                                <th>Time</th>
+                                <th>Actor</th>
+                                <th>Action</th>
+                                <th>Details</th>
+                            </tr>
+                        </thead>
+                        <tbody></tbody>
+                    </table>
+                </div>
+            </div>
+            </div>
+        </section>
+    </main>
+
+    <script src="js/admin.js"></script>
+</body>
+</html>

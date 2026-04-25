@@ -1,0 +1,18 @@
+{
+  "G2T8-ZRWN-5SS8-22L6": {
+    "hwid": "f446c96e67a00200d8f4fb994674c31e7185eaaa084084d8452cc041366a3431",
+    "plan": "monthly_per_spec",
+    "createdAt": "2026-04-25T18:30:46.022Z",
+    "expiresAt": "2026-05-25T18:30:46.022Z",
+    "active": true,
+    "specs": [
+      "ArmsWarrior",
+      "BloodDK",
+      "DisciplinePriest",
+      "ElementalShaman",
+      "EnhancementShaman",
+      "FuryWarrior",
+      "HolyPaladin"
+    ]
+  }
+}

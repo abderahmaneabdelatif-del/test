@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Max Combat Assistant — PvP / PvE rotation assistant</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Orbitron:wght@700;900&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="css/style.css">
+</head>
+<body id="top">
+    <nav class="site-nav">
+        <div class="site-nav-inner">
+            <a href="index.html" class="logo"><span class="logo-mark" aria-hidden="true">⚔</span> Max Combat <span class="logo-accent">Assistant</span></a>
+            <div class="nav-links">
+                <a href="#features">Features</a>
+                <a href="#spec-store">Subscribe</a>
+                <a href="#faq">FAQ</a>
+                <a href="dashboard.html">License Portal</a>
+                <a href="#spec-store" class="btn">Get access</a>
+            </div>
+        </div>
+    </nav>
+
+    <main>
+        <section class="hero">
+            <div class="hero-content">
+                <p class="hero-kicker">World of Warcraft · TWW</p>
+                <h1>DOMINATE<br><span class="hero-title-line">THE ARENA</span></h1>
+                <p class="hero-lead">The most advanced, hardware-bound rotation assistant. Pixel-perfect timing, smart interrupts, and a builder that keeps you in control.</p>
+                <div class="hero-actions">
+                    <a href="#spec-store" class="btn btn-lg">Subscribe per spec</a>
+                    <a href="https://discord.gg/yourinvite" target="_blank" rel="noopener noreferrer" class="btn-action">Discord</a>
+                </div>
+            </div>
+            <div class="hero-visual">
+                <div class="hero-frame">
+                    <div class="hero-frame-glow"></div>
+                    <img src="images/app-preview.png" alt="Max Combat Assistant — action bar keybinds and spell grid" class="app-mockup" width="960" height="600" fetchpriority="high" decoding="async">
+                </div>
+            </div>
+        </section>
+
+        <section id="features" class="section-block section-features">
+            <div class="section-inner">
+                <h2 class="section-title"><span class="section-title-text">Why Max Combat Assistant</span></h2>
+                <div class="features-grid">
+                    <article class="feature-box">
+                        <div class="feature-icon-wrap" aria-hidden="true">⚡</div>
+                        <h3 class="f-title">Pixel-perfect engine</h3>
+                        <p>Unlike memory readers, our pixel-based engine is built for a small attack surface. It reads the screen in milliseconds to drive clean rotations.</p>
+                    </article>
+                    <article class="feature-box">
+                        <div class="feature-icon-wrap" aria-hidden="true">🔒</div>
+                        <h3 class="f-title">Hardware-bound license</h3>
+                        <p>Your key is tied to a SHA-256 hash of your machine. One PC per subscription—reset available through support when you upgrade hardware.</p>
+                    </article>
+                    <article class="feature-box">
+                        <div class="feature-icon-wrap" aria-hidden="true">🎯</div>
+                        <h3 class="f-title">Smart kicks &amp; CC</h3>
+                        <p>Configure interrupt thresholds so reactions look human while you stay ahead in PvP and Mythic+.</p>
+                    </article>
+                    <article class="feature-box">
+                        <div class="feature-icon-wrap" aria-hidden="true">⚙️</div>
+                        <h3 class="f-title">Sequence builder</h3>
+                        <p>Priority lists and dropdowns—no scripting required to shape how your rotation responds in combat.</p>
+                    </article>
+                </div>
+            </div>
+        </section>
+
+        <section id="spec-store" class="section-block section-store">
+            <div class="section-inner section-inner--wide">
+                <h2 class="section-title"><span class="section-title-text">Monthly per specialization</span></h2>
+                <p class="spec-store-lead"><strong id="heroPriceDisplay">$6 USD</strong> per spec, per month. Pick only what you play—your license unlocks those specs until renewal.</p>
+                <div class="spec-toolbar">
+                    <input type="search" id="specSearch" class="input-box spec-search" placeholder="Search specs…" autocomplete="off" spellcheck="false">
+                    <button type="button" id="specSelectAll" class="btn-action">Select all</button>
+                    <button type="button" id="specClearAll" class="btn-action">Clear</button>
+                </div>
+                <div class="spec-filters card card--panel">
+                    <div class="spec-filter-group">
+                        <label for="specClassSelect" class="spec-filter-label">Class</label>
+                        <select id="specClassSelect" class="spec-select">
+                            <option value="">All classes</option>
+                        </select>
+                    </div>
+                    <div class="spec-filter-group">
+                        <label for="specSpecSelect" class="spec-filter-label">Specialization</label>
+                        <select id="specSpecSelect" class="spec-select">
+                            <option value="">All specs</option>
+                        </select>
+                    </div>
+                </div>
+                <div id="specGrid" class="spec-grid" aria-live="polite"></div>
+                <div class="spec-checkout-bar card card--panel">
+                    <div class="spec-checkout-email-row">
+                        <label for="specCheckoutEmail" class="spec-email-label">Email for delivery</label>
+                        <input type="email" id="specCheckoutEmail" class="input-box spec-email-input" placeholder="you@example.com" autocomplete="email">
+                    </div>
+                    <div class="spec-total-row">
+                        <p id="specSummary" class="spec-summary">0 specs × $6 = <strong>$0</strong> / month</p>
+                        <button type="button" id="specPayBtn" class="btn" disabled>Continue to payment</button>
+                    </div>
+                    <p class="spec-hint">Crypto checkout via <strong>NOWPayments</strong> when your server is configured; otherwise copy the order payload we generate.</p>
+                </div>
+            </div>
+        </section>
+
+        <div id="checkoutModal" class="checkout-modal" aria-hidden="true" role="dialog" aria-labelledby="checkoutModalTitle">
+            <div class="checkout-modal-backdrop" id="checkoutModalBackdrop"></div>
+            <div class="checkout-modal-panel card card--panel">
+                <button type="button" class="checkout-modal-close" id="checkoutModalClose" aria-label="Close">&times;</button>
+                <h3 id="checkoutModalTitle" class="checkout-modal-title">Checkout</h3>
+                <div id="checkoutModalBody" class="checkout-modal-body"></div>
+                <div id="checkoutModalError" class="checkout-modal-error"></div>
+                <div id="checkoutModalActions" class="checkout-modal-actions"></div>
+            </div>
+        </div>
+
+        <section id="faq" class="section-block section-faq">
+            <div class="section-inner">
+                <h2 class="section-title"><span class="section-title-text">FAQ</span></h2>
+                <div class="faq-container">
+                    <div class="faq-item">
+                        <div class="faq-question">Is this detectable by Warden (anti-cheat)? <span class="faq-chevron" aria-hidden="true">▼</span></div>
+                        <div class="faq-answer">
+                            <p>Max Combat Assistant does not read or write game memory. We use a pixel-based engine and external input, designed to keep the footprint small.</p>
+                        </div>
+                    </div>
+                    <div class="faq-item">
+                        <div class="faq-question">Can I use my license on a different PC? <span class="faq-chevron" aria-hidden="true">▼</span></div>
+                        <div class="faq-answer">
+                            <p>No—keys are HWID-bound. For a new machine or major hardware change, open a ticket in Discord for a manual reset.</p>
+                        </div>
+                    </div>
+                    <div class="faq-item">
+                        <div class="faq-question">How does crypto payment delivery work? <span class="faq-chevron" aria-hidden="true">▼</span></div>
+                        <div class="faq-answer">
+                            <p>We use NOWPayments. After network confirmation (often 1–3 minutes), the server issues your key—check email and the License Portal.</p>
+                        </div>
+                    </div>
+                    <div class="faq-item">
+                        <div class="faq-question">What does “<span id="faqPriceDisplay1">$6</span> per spec per month” mean? <span class="faq-chevron" aria-hidden="true">▼</span></div>
+                        <div class="faq-answer">
+                            <p>You choose specs from our list. Your bill is <span id="faqPriceDisplay2">$6</span> × number of specs, each month. Only those specs stay licensed until you renew or change selection.</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <footer class="site-footer">
+        <div class="footer-inner">
+            <p>&copy; 2026 Max Combat Assistant. Not affiliated with Blizzard Entertainment.</p>
+            <p class="footer-note">Payments via NOWPayments (USDT / crypto). Keys delivered by email.</p>
+        </div>
+    </footer>
+
+    <script src="js/main.js"></script>
+</body>
+</html>

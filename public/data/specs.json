@@ -1,0 +1,201 @@
+{
+  "pricePerSpecUsdPerMonth": 15,
+  "currency": "USD",
+  "specs": [
+    {
+      "id": "AfflictionWarlock",
+      "label": "Affliction Warlock",
+      "image": "/specs/AfflictionWarlock.jpg"
+    },
+    {
+      "id": "ArcaneMage",
+      "label": "Arcane Mage",
+      "image": "/specs/ArcaneMage.jpg"
+    },
+    {
+      "id": "ArmsWarrior",
+      "label": "Arms Warrior",
+      "image": "/specs/ArmsWarrior.jpg"
+    },
+    {
+      "id": "Rogue",
+      "label": "Assassination Rogue",
+      "image": "/specs/Rogue-Assassination.jpg"
+    },
+    {
+      "id": "AugmentationEvoker",
+      "label": "Augmentation Evoker",
+      "image": "/specs/AugmentationEvoker.jpg"
+    },
+    {
+      "id": "BalanceDruid",
+      "label": "Balance Druid",
+      "image": "/specs/BalanceDruid.jpg"
+    },
+    {
+      "id": "BearDruid",
+      "label": "Bear Druid",
+      "image": "/specs/BearDruid.jpg"
+    },
+    {
+      "id": "BeastMasteryHunter",
+      "label": "Beast Mastery Hunter",
+      "image": "/specs/BeastMasteryHunter.jpg"
+    },
+    {
+      "id": "BloodDK",
+      "label": "Blood Death Knight",
+      "image": "/specs/BloodDK.jpg"
+    },
+    {
+      "id": "BrewmasterMonk",
+      "label": "Brewmaster Monk",
+      "image": "/specs/BrewmasterMonk.jpg"
+    },
+    {
+      "id": "CatDruid",
+      "label": "Cat Druid",
+      "image": "/specs/CatDruid.jpg"
+    },
+    {
+      "id": "DemonologyWarlock",
+      "label": "Demonology Warlock",
+      "image": "/specs/DemonologyWarlock.jpg"
+    },
+    {
+      "id": "DestructionWarlock",
+      "label": "Destruction Warlock",
+      "image": "/specs/DestructionWarlock.jpg"
+    },
+    {
+      "id": "DevastationEvoker",
+      "label": "Devastation Evoker",
+      "image": "/specs/DevastationEvoker.jpg"
+    },
+    {
+      "id": "DisciplinePriest",
+      "label": "Discipline Priest",
+      "image": "/specs/DisciplinePriest.jpg"
+    },
+    {
+      "id": "ElementalShaman",
+      "label": "Elemental Shaman",
+      "image": "/specs/ElementalShaman.jpg"
+    },
+    {
+      "id": "EnhancementShaman",
+      "label": "Enhancement Shaman",
+      "image": "/specs/EnhancementShaman.jpg"
+    },
+    {
+      "id": "FireMage",
+      "label": "Fire Mage",
+      "image": "/specs/FireMage.jpg"
+    },
+    {
+      "id": "FrostDK",
+      "label": "Frost Death Knight",
+      "image": "/specs/FrostDK.jpg"
+    },
+    {
+      "id": "FrostMage",
+      "label": "Frost Mage",
+      "image": "/specs/FrostMage.jpg"
+    },
+    {
+      "id": "FuryWarrior",
+      "label": "Fury Warrior",
+      "image": "/specs/FuryWarrior.jpg"
+    },
+    {
+      "id": "HavocDH",
+      "label": "Havoc Demon Hunter",
+      "image": "/specs/HavocDH.jpg"
+    },
+    {
+      "id": "HolyPaladin",
+      "label": "Holy Paladin",
+      "image": "/specs/HolyPaladin.jpg"
+    },
+    {
+      "id": "HolyPriest",
+      "label": "Holy Priest",
+      "image": "/specs/HolyPriest.jpg"
+    },
+    {
+      "id": "MarksmanshipHunter",
+      "label": "Marksmanship Hunter",
+      "image": "/specs/MarksmanshipHunter.jpg"
+    },
+    {
+      "id": "Mistweaver",
+      "label": "Mistweaver Monk",
+      "image": "/specs/Monk-Mistweaver.jpg"
+    },
+    {
+      "id": "OutlawRogue",
+      "label": "Outlaw Rogue",
+      "image": "/specs/OutlawRogue.jpg"
+    },
+    {
+      "id": "PreservationEvoker",
+      "label": "Preservation Evoker",
+      "image": "/specs/PreservationEvoker.jpg"
+    },
+    {
+      "id": "ProtectionPaladin",
+      "label": "Protection Paladin",
+      "image": "/specs/ProtectionPaladin.jpg"
+    },
+    {
+      "id": "ProtectionWarrior",
+      "label": "Protection Warrior",
+      "image": "/specs/ProtectionWarrior.jpg"
+    },
+    {
+      "id": "RestorationDruid",
+      "label": "Restoration Druid",
+      "image": "/specs/RestorationDruid.jpg"
+    },
+    {
+      "id": "RestorationShaman",
+      "label": "Restoration Shaman",
+      "image": "/specs/RestorationShaman.jpg"
+    },
+    {
+      "id": "RetributionPaladin",
+      "label": "Retribution Paladin",
+      "image": "/specs/RetributionPaladin.jpg"
+    },
+    {
+      "id": "ShadowPriest",
+      "label": "Shadow Priest",
+      "image": "/specs/ShadowPriest.jpg"
+    },
+    {
+      "id": "SubtletyRogue",
+      "label": "Subtlety Rogue",
+      "image": "/specs/SubtletyRogue.jpg"
+    },
+    {
+      "id": "SurvivalHunter",
+      "label": "Survival Hunter",
+      "image": "/specs/SurvivalHunter.jpg"
+    },
+    {
+      "id": "UnholyDK",
+      "label": "Unholy Death Knight",
+      "image": "/specs/UnholyDK.jpg"
+    },
+    {
+      "id": "VengeanceDH",
+      "label": "Vengeance Demon Hunter",
+      "image": "/specs/VengeanceDH.jpg"
+    },
+    {
+      "id": "WindwalkerMonk",
+      "label": "Windwalker Monk",
+      "image": "/specs/WindwalkerMonk.jpg"
+    }
+  ]
+}

@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Max Combat Assistant — License Portal</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Orbitron:wght@700;900&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+    <nav class="site-nav">
+        <div class="site-nav-inner">
+            <a href="index.html" class="logo"><span class="logo-mark" aria-hidden="true">⚔</span> Max Combat <span class="logo-accent">Assistant</span></a>
+            <div class="nav-links">
+                <a href="index.html">Back to Home</a>
+                <a href="https://discord.gg/yourinvite" target="_blank" rel="noopener noreferrer" class="btn-action">Support Discord</a>
+            </div>
+        </div>
+    </nav>
+
+    <div class="dash-container">
+        <h2>LICENSE PORTAL</h2>
+        <p class="dash-lead">
+            Enter your 16-character license key below to check its status, expiration date, and hardware binding.
+        </p>
+
+        <input type="text" id="dashKeyInput" class="input-box" placeholder="XXXX-XXXX-XXXX-XXXX" maxlength="19" autocomplete="off" spellcheck="false">
+        <button type="button" id="dashCheckBtn" class="btn btn-block">Check License</button>
+
+        <div id="statusCard" class="status-card"></div>
+    </div>
+
+    <script src="js/main.js"></script>
+</body>
+</html>

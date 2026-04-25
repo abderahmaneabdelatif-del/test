@@ -1,0 +1,16 @@
+{
+  "name": "maxcombat-website",
+  "version": "1.0.0",
+  "description": "Sales Website & License API for MaxCombatAssistant",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "nodemon server.js",
+    "generate-specs": "node scripts/generate-specs-json.mjs"
+  },
+  "dependencies": {
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.5",
+    "express": "^4.19.2"
+  }
+}

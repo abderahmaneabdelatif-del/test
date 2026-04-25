@@ -1,0 +1,42 @@
+[
+  {
+    "reference": "B2E13E25E4BB476E",
+    "specIds": [
+      "AfflictionWarlock",
+      "OutlawRogue",
+      "RetributionPaladin"
+    ],
+    "amountUsd": 9,
+    "currency": "USD",
+    "email": "greendev2062@gmail.com",
+    "createdAt": "2026-04-24T23:47:37.566Z"
+  },
+  {
+    "kind": "per_spec_monthly",
+    "orderId": "MCA-1777142086725-826A51E8",
+    "specIds": [
+      "FireMage",
+      "EnhancementShaman",
+      "MarksmanshipHunter",
+      "ShadowPriest",
+      "RetributionPaladin",
+      "RestorationShaman"
+    ],
+    "specLabels": [
+      "Fire Mage",
+      "Enhancement Shaman",
+      "Marksmanship Hunter",
+      "Shadow Priest",
+      "Retribution Paladin",
+      "Restoration Shaman"
+    ],
+    "selectedSummary": "Fire Mage, Enhancement Shaman, Marksmanship Hunter, Shadow Priest, Retribution Paladin, Restoration Shaman",
+    "amountUsd": 60,
+    "currency": "USD",
+    "email": "greenev2020@gil.com",
+    "createdAt": "2026-04-25T18:34:46.727Z",
+    "status": "pending",
+    "npInvoiceId": "5619018086",
+    "invoiceUrl": "https://nowpayments.io/payment/?iid=5619018086"
+  }
+]
