@@ -31,6 +31,15 @@ function loadSpecsCatalog() {
     return JSON.parse(fs.readFileSync(SPECS_FILE, 'utf8'));
 }
 
+async function getActivePrice() {
+    const cat = loadSpecsCatalog();
+    const conf = await getConfig();
+    if (conf && conf.pricePerSpecUsdPerMonth != null) {
+        return Number(conf.pricePerSpecUsdPerMonth);
+    }
+    return cat.pricePerSpecUsdPerMonth || 6;
+}
+
 function validSpecIdsSet() {
     const cat = loadSpecsCatalog();
     return new Set(cat.specs.map((s) => s.id));
@@ -108,7 +117,9 @@ const {
     upsertPendingOrder, 
     deletePendingOrder, 
     appendAudit, 
-    readAudit 
+    readAudit,
+    getConfig,
+    saveConfig
 } = require('./database');
 
 // We initialize the Postgres table on startup
@@ -265,8 +276,10 @@ function licenseAllowsSpec(license, specId) {
 }
 
 // ── API: Spec catalog ──
-app.get('/api/specs', (req, res) => {
-    res.json(loadSpecsCatalog());
+app.get('/api/specs', async (req, res) => {
+    const cat = loadSpecsCatalog();
+    cat.pricePerSpecUsdPerMonth = await getActivePrice();
+    res.json(cat);
 });
 
 // ── API: Checkout config (what the UI can rely on) ──
@@ -282,7 +295,7 @@ app.get('/api/checkout/config', (req, res) => {
 app.post('/api/checkout-draft', async (req, res) => {
     const allowed = validSpecIdsSet();
     const cat = loadSpecsCatalog();
-    const priceEach = cat.pricePerSpecUsdPerMonth || 6;
+    const priceEach = await getActivePrice();
 
     const { specIds, email } = req.body || {};
     if (!Array.isArray(specIds) || specIds.length === 0) {
@@ -331,7 +344,7 @@ app.post('/api/checkout-draft', async (req, res) => {
 app.post('/api/checkout/per-spec', async (req, res) => {
     const allowed = validSpecIdsSet();
     const cat = loadSpecsCatalog();
-    const priceEach = cat.pricePerSpecUsdPerMonth || 6;
+    const priceEach = await getActivePrice();
     const base = publicBaseUrl();
     const apiKey = process.env.NOWPAYMENTS_API_KEY;
 
@@ -502,7 +515,7 @@ app.get('/api/status/:key', async (req, res) => {
     }
 
     const cat = loadSpecsCatalog();
-    const priceEach = cat.pricePerSpecUsdPerMonth || 6;
+    const priceEach = await getActivePrice();
     const specList = Array.isArray(license.specs) ? license.specs : null;
     const monthlyRate =
         license.plan === 'monthly_per_spec' && specList && specList.length
@@ -557,18 +570,13 @@ app.get('/api/admin/overview', requireAdmin('support'), async (req, res) => {
     res.json(stats);
 });
 
-app.post('/api/admin/config/price', requireAdmin('owner'), (req, res) => {
+app.post('/api/admin/config/price', requireAdmin('owner'), async (req, res) => {
     const price = Number(req.body?.price);
     if (Number.isNaN(price) || price < 0) {
         return res.status(400).json({ error: 'Valid price is required' });
     }
     try {
-        let cat = { pricePerSpecUsdPerMonth: 6, currency: 'USD', specs: [] };
-        if (fs.existsSync(SPECS_FILE)) {
-            cat = JSON.parse(fs.readFileSync(SPECS_FILE, 'utf8'));
-        }
-        cat.pricePerSpecUsdPerMonth = price;
-        fs.writeFileSync(SPECS_FILE, JSON.stringify(cat, null, 2));
+        await saveConfig({ pricePerSpecUsdPerMonth: price });
         auditAdmin(req, 'config.update_price', { price });
         res.json({ ok: true, price });
     } catch (e) {
@@ -824,7 +832,7 @@ async function fulfillPerSpecMonthly(payment, specIds, emailFromPayment) {
     }
 
     const cat = loadSpecsCatalog();
-    const priceEach = cat.pricePerSpecUsdPerMonth || 6;
+    const priceEach = await getActivePrice();
     const newKey = generateLicenseKey();
     const exp = new Date();
     exp.setMonth(exp.getMonth() + 1);
@@ -883,7 +891,7 @@ async function fulfillLegacyPayment(payment) {
 
     const priceAmount = Number(payment.price_amount) || 0;
     const cat = loadSpecsCatalog();
-    const priceEach = cat.pricePerSpecUsdPerMonth || 6;
+    const priceEach = await getActivePrice();
 
     let plan = 'monthly';
     let expiresAt;

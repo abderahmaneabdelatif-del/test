@@ -138,6 +138,19 @@ async function readAudit(limit = 200) {
   const res = await pool.query('SELECT data FROM audit_log ORDER BY id DESC LIMIT $1', [safeLimit]);
   return res.rows.map(r => r.data);
 }
+async function getConfig() {
+  const res = await pool.query("SELECT data FROM licenses WHERE key = '__CONFIG__'");
+  return res.rows.length ? res.rows[0].data : {};
+}
+
+async function saveConfig(data) {
+  const current = await getConfig();
+  const merged = { ...current, ...data };
+  await pool.query(
+    "INSERT INTO licenses(key, data) VALUES('__CONFIG__', $1) ON CONFLICT(key) DO UPDATE SET data = EXCLUDED.data",
+    [merged]
+  );
+}
 
 module.exports = {
   pool,
@@ -150,5 +163,7 @@ module.exports = {
   upsertPendingOrder,
   deletePendingOrder,
   appendAudit,
-  readAudit
+  readAudit,
+  getConfig,
+  saveConfig
 };
