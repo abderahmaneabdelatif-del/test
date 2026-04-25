@@ -14,11 +14,10 @@ const __root = __dirname;
 const DB_FILE = path.join(__root, 'licenses.json');
 const PENDING_ORDERS_FILE = path.join(__root, 'pending_orders.json');
 const SPECS_FILE = path.join(__root, 'public', 'data', 'specs.json');
-const WEBUI_ASSETS = path.join(__root, '..', 'WebUI', 'assets');
 const NOWPAYMENTS_API = 'https://api.nowpayments.io/v1';
 
 app.use(express.static(path.join(__root, 'public')));
-app.use('/specs', express.static(path.join(WEBUI_ASSETS, 'specs')));
+// Note: /specs images are now served natively from public/specs directory
 
 function publicBaseUrl() {
     const u = (process.env.PUBLIC_BASE_URL || '').replace(/\/$/, '');
@@ -99,37 +98,21 @@ function getAdminAccounts() {
     return out;
 }
 
-const AUDIT_FILE = path.join(__root, 'admin_audit.jsonl');
-if (!fs.existsSync(AUDIT_FILE)) {
-    fs.writeFileSync(AUDIT_FILE, '');
-}
+const { 
+    initDB, 
+    loadDB, 
+    saveDB, 
+    loadPendingOrders, 
+    savePendingOrders, 
+    findPendingByOrderId, 
+    upsertPendingOrder, 
+    deletePendingOrder, 
+    appendAudit, 
+    readAudit 
+} = require('./database');
 
-function appendAudit(entry) {
-    const line = JSON.stringify({
-        at: new Date().toISOString(),
-        ...entry,
-    });
-    fs.appendFileSync(AUDIT_FILE, `${line}\n`);
-}
-
-function readAudit(limit = 200) {
-    if (!fs.existsSync(AUDIT_FILE)) return [];
-    const raw = fs.readFileSync(AUDIT_FILE, 'utf8');
-    if (!raw.trim()) return [];
-    const lines = raw
-        .split(/\r?\n/)
-        .filter(Boolean)
-        .slice(-Math.max(1, Math.min(1000, Number(limit) || 200)));
-    const out = [];
-    for (const line of lines) {
-        try {
-            out.push(JSON.parse(line));
-        } catch {
-            // ignore invalid line
-        }
-    }
-    return out.reverse();
-}
+// We initialize the Postgres table on startup
+initDB().catch(console.error);
 
 function requireAdmin(minRole = 'support') {
     return (req, res, next) => {
@@ -170,7 +153,7 @@ function auditAdmin(req, action, details) {
         action,
         details: details || {},
         ip: req.ip || '',
-    });
+    }).catch(console.error);
 }
 
 function adminApiUnavailable() {
@@ -184,9 +167,9 @@ function requireAdminLegacy(req, res, next) {
     return requireAdmin()(req, res, next);
 }
 
-function buildAdminStats() {
-    const db = loadDB();
-    const orders = loadPendingOrders();
+async function buildAdminStats() {
+    const db = await loadDB();
+    const orders = await loadPendingOrders();
     const now = new Date();
     const licenses = Object.entries(db).map(([key, value]) => ({ key, ...value }));
     const active = licenses.filter((l) => l.active && (l.plan === 'lifetime' || new Date(l.expiresAt) > now));
@@ -204,63 +187,12 @@ function buildAdminStats() {
     };
 }
 
-if (!fs.existsSync(DB_FILE)) {
-    fs.writeFileSync(
-        DB_FILE,
-        JSON.stringify(
-            {
-                'DEMO-1234-ABCD-5678': {
-                    hwid: null,
-                    plan: 'lifetime',
-                    createdAt: new Date().toISOString(),
-                    expiresAt: '2099-12-31T23:59:59.000Z',
-                    active: true,
-                },
-            },
-            null,
-            2
-        )
-    );
-}
-
-if (!fs.existsSync(PENDING_ORDERS_FILE)) {
-    fs.writeFileSync(PENDING_ORDERS_FILE, JSON.stringify([], null, 2));
-}
-
-function loadDB() {
-    return JSON.parse(fs.readFileSync(DB_FILE, 'utf8'));
-}
-
-function saveDB(data) {
-    fs.writeFileSync(DB_FILE, JSON.stringify(data, null, 2));
-}
-
-function loadPendingOrders() {
-    return JSON.parse(fs.readFileSync(PENDING_ORDERS_FILE, 'utf8'));
-}
-
-function savePendingOrders(list) {
-    fs.writeFileSync(PENDING_ORDERS_FILE, JSON.stringify(list, null, 2));
-}
-
-function findPendingByOrderId(orderId) {
-    return loadPendingOrders().find((o) => o.orderId === orderId) || null;
-}
-
 function normalizeOrderId(value) {
     return String(value || '')
         .trim()
         .toUpperCase()
         .replace(/[^A-Z0-9-]/g, '')
         .slice(0, 120);
-}
-
-function upsertPendingOrder(entry) {
-    const list = loadPendingOrders();
-    const i = list.findIndex((o) => o.orderId === entry.orderId);
-    if (i >= 0) list[i] = { ...list[i], ...entry };
-    else list.push(entry);
-    savePendingOrders(list);
 }
 
 function licenseHasPaymentId(db, paymentId) {
@@ -347,7 +279,7 @@ app.get('/api/checkout/config', (req, res) => {
 });
 
 // ── API: Legacy draft (manual JSON flow) ──
-app.post('/api/checkout-draft', (req, res) => {
+app.post('/api/checkout-draft', async (req, res) => {
     const allowed = validSpecIdsSet();
     const cat = loadSpecsCatalog();
     const priceEach = cat.pricePerSpecUsdPerMonth || 6;
@@ -368,7 +300,7 @@ app.post('/api/checkout-draft', (req, res) => {
     const orderId = `MCA-${Date.now()}-${crypto.randomBytes(4).toString('hex').toUpperCase()}`;
 
     const specMeta = selectedSpecsMeta(normalized);
-    upsertPendingOrder({
+    await upsertPendingOrder({
         kind: 'per_spec_monthly',
         orderId,
         specIds: specMeta.ids,
@@ -424,7 +356,7 @@ app.post('/api/checkout/per-spec', async (req, res) => {
     const orderId = `MCA-${Date.now()}-${crypto.randomBytes(4).toString('hex').toUpperCase()}`;
 
     const specMeta = selectedSpecsMeta(normalized);
-    upsertPendingOrder({
+    await upsertPendingOrder({
         kind: 'per_spec_monthly',
         orderId,
         specIds: specMeta.ids,
@@ -472,7 +404,7 @@ app.post('/api/checkout/per-spec', async (req, res) => {
         const invoiceUrl = inv.invoice_url || inv.invoiceUrl;
         const npId = inv.id != null ? String(inv.id) : null;
 
-        upsertPendingOrder({
+        await upsertPendingOrder({
             orderId,
             npInvoiceId: npId,
             invoiceUrl,
@@ -501,14 +433,14 @@ app.post('/api/checkout/per-spec', async (req, res) => {
 });
 
 // ── API: Validate License & Bind HWID ──
-app.post('/api/validate', (req, res) => {
+app.post('/api/validate', async (req, res) => {
     const { key, hwid, spec } = req.body;
 
     if (!key || !hwid) {
         return res.json({ valid: false, message: 'Missing key or HWID' });
     }
 
-    const db = loadDB();
+    const db = await loadDB();
     const license = db[key];
 
     if (!license) {
@@ -535,7 +467,7 @@ app.post('/api/validate', (req, res) => {
 
     if (!license.hwid) {
         license.hwid = hwid;
-        saveDB(db);
+        await saveDB({ ...db, [key]: license });
         return res.json({
             valid: true,
             plan: license.plan,
@@ -560,9 +492,9 @@ app.post('/api/validate', (req, res) => {
     });
 });
 
-app.get('/api/status/:key', (req, res) => {
+app.get('/api/status/:key', async (req, res) => {
     const key = req.params.key;
-    const db = loadDB();
+    const db = await loadDB();
     const license = db[key];
 
     if (!license) {
@@ -590,13 +522,13 @@ app.get('/api/status/:key', (req, res) => {
     });
 });
 
-app.get('/api/order/:orderId', (req, res) => {
+app.get('/api/order/:orderId', async (req, res) => {
     const orderId = normalizeOrderId(req.params.orderId);
     if (!orderId) {
         return res.status(400).json({ error: 'Missing order id' });
     }
 
-    const pending = findPendingByOrderId(orderId);
+    const pending = await findPendingByOrderId(orderId);
     if (!pending) {
         return res.status(404).json({ error: 'Order not found' });
     }
@@ -620,8 +552,8 @@ app.get('/api/admin/health', requireAdmin('support'), (req, res) => {
     res.json({ ok: true, admin: adminActor(req) });
 });
 
-app.get('/api/admin/overview', requireAdmin('support'), (req, res) => {
-    const stats = buildAdminStats();
+app.get('/api/admin/overview', requireAdmin('support'), async (req, res) => {
+    const stats = await buildAdminStats();
     res.json(stats);
 });
 
@@ -644,11 +576,11 @@ app.post('/api/admin/config/price', requireAdmin('owner'), (req, res) => {
     }
 });
 
-app.get('/api/admin/licenses', requireAdmin('support'), (req, res) => {
+app.get('/api/admin/licenses', requireAdmin('support'), async (req, res) => {
     const q = String(req.query.q || '').trim().toLowerCase();
     const plan = String(req.query.plan || '').trim().toLowerCase();
     const status = String(req.query.status || '').trim().toLowerCase();
-    const db = loadDB();
+    const db = await loadDB();
     const now = new Date();
 
     let list = Object.entries(db).map(([key, license]) => ({
@@ -683,7 +615,7 @@ app.get('/api/admin/licenses', requireAdmin('support'), (req, res) => {
     res.json({ items: list });
 });
 
-app.post('/api/admin/licenses/create', requireAdmin('owner'), (req, res) => {
+app.post('/api/admin/licenses/create', requireAdmin('owner'), async (req, res) => {
     const {
         plan = 'monthly',
         months = 1,
@@ -692,7 +624,7 @@ app.post('/api/admin/licenses/create', requireAdmin('owner'), (req, res) => {
         active = true,
         key: customKey,
     } = req.body || {};
-    const db = loadDB();
+    const db = await loadDB();
 
     let key = normalizeLicenseKey(customKey);
     if (!key) key = generateLicenseKey();
@@ -728,32 +660,32 @@ app.post('/api/admin/licenses/create', requireAdmin('owner'), (req, res) => {
     res.json({ ok: true, key, license: entry });
 });
 
-app.post('/api/admin/licenses/:key/toggle-active', requireAdmin('owner'), (req, res) => {
+app.post('/api/admin/licenses/:key/toggle-active', requireAdmin('owner'), async (req, res) => {
     const key = normalizeLicenseKey(req.params.key);
-    const db = loadDB();
+    const db = await loadDB();
     const l = db[key];
     if (!l) return res.status(404).json({ error: 'License not found' });
     l.active = !l.active;
-    saveDB(db);
+    await saveDB(db);
     auditAdmin(req, 'license.toggle_active', { key, active: l.active });
     res.json({ ok: true, key, active: l.active });
 });
 
-app.post('/api/admin/licenses/:key/reset-hwid', requireAdmin('owner'), (req, res) => {
+app.post('/api/admin/licenses/:key/reset-hwid', requireAdmin('owner'), async (req, res) => {
     const key = normalizeLicenseKey(req.params.key);
-    const db = loadDB();
+    const db = await loadDB();
     const l = db[key];
     if (!l) return res.status(404).json({ error: 'License not found' });
     l.hwid = null;
-    saveDB(db);
+    await saveDB(db);
     auditAdmin(req, 'license.reset_hwid', { key });
     res.json({ ok: true, key, hwid: null });
 });
 
-app.post('/api/admin/licenses/:key/extend', requireAdmin('owner'), (req, res) => {
+app.post('/api/admin/licenses/:key/extend', requireAdmin('owner'), async (req, res) => {
     const key = normalizeLicenseKey(req.params.key);
     const months = Math.max(1, Math.min(36, Number(req.body?.months) || 1));
-    const db = loadDB();
+    const db = await loadDB();
     const l = db[key];
     if (!l) return res.status(404).json({ error: 'License not found' });
     if (l.plan === 'lifetime') return res.status(400).json({ error: 'Lifetime licenses do not need extension' });
@@ -763,29 +695,29 @@ app.post('/api/admin/licenses/:key/extend', requireAdmin('owner'), (req, res) =>
     const from = Number.isNaN(base.getTime()) || base < now ? now : base;
     from.setMonth(from.getMonth() + months);
     l.expiresAt = from.toISOString();
-    saveDB(db);
+    await saveDB(db);
     auditAdmin(req, 'license.extend', { key, months, expiresAt: l.expiresAt });
     res.json({ ok: true, key, expiresAt: l.expiresAt });
 });
 
-app.post('/api/admin/licenses/:key/delete', requireAdmin('owner'), (req, res) => {
+app.post('/api/admin/licenses/:key/delete', requireAdmin('owner'), async (req, res) => {
     const key = normalizeLicenseKey(req.params.key);
-    const db = loadDB();
+    const db = await loadDB();
     const l = db[key];
     if (!l) return res.status(404).json({ error: 'License not found' });
 
     delete db[key];
-    saveDB(db);
+    await saveDB(db);
     auditAdmin(req, 'license.delete', { key });
     res.json({ ok: true, key });
 });
 
-app.post('/api/admin/licenses/bulk-delete', requireAdmin('owner'), (req, res) => {
+app.post('/api/admin/licenses/bulk-delete', requireAdmin('owner'), async (req, res) => {
     const keys = Array.isArray(req.body?.keys) ? req.body.keys : [];
     const normalized = [...new Set(keys.map((k) => normalizeLicenseKey(k)).filter(Boolean))].slice(0, 500);
     if (!normalized.length) return res.status(400).json({ error: 'No license keys provided' });
 
-    const db = loadDB();
+    const db = await loadDB();
     const deleted = [];
     const missing = [];
     normalized.forEach((key) => {
@@ -796,15 +728,15 @@ app.post('/api/admin/licenses/bulk-delete', requireAdmin('owner'), (req, res) =>
             missing.push(key);
         }
     });
-    saveDB(db);
+    await saveDB(db);
     auditAdmin(req, 'license.bulk_delete', { deletedCount: deleted.length, missingCount: missing.length });
     res.json({ ok: true, deleted, missing });
 });
 
-app.get('/api/admin/orders', requireAdmin('support'), (req, res) => {
+app.get('/api/admin/orders', requireAdmin('support'), async (req, res) => {
     const status = String(req.query.status || '').trim().toLowerCase();
     const q = String(req.query.q || '').trim().toLowerCase();
-    let list = loadPendingOrders();
+    let list = await loadPendingOrders();
 
     if (status) list = list.filter((o) => String(o.status || 'pending').toLowerCase() === status);
     if (q) {
@@ -842,27 +774,27 @@ app.get('/api/admin/orders', requireAdmin('support'), (req, res) => {
     res.json({ items: list });
 });
 
-app.post('/api/admin/orders/:orderId/delete', requireAdmin('owner'), (req, res) => {
+app.post('/api/admin/orders/:orderId/delete', requireAdmin('owner'), async (req, res) => {
     const orderId = normalizeOrderId(req.params.orderId);
     if (!orderId) return res.status(400).json({ error: 'Missing order id' });
 
-    const list = loadPendingOrders();
+    const list = await loadPendingOrders();
     const idx = list.findIndex((o) => String(o.orderId || '').toUpperCase() === orderId);
     if (idx < 0) return res.status(404).json({ error: 'Order not found' });
 
     const removed = list[idx];
     list.splice(idx, 1);
-    savePendingOrders(list);
+    await savePendingOrders(list);
     auditAdmin(req, 'order.delete', { orderId, status: removed?.status || 'pending' });
     res.json({ ok: true, orderId });
 });
 
-app.post('/api/admin/orders/bulk-delete', requireAdmin('owner'), (req, res) => {
+app.post('/api/admin/orders/bulk-delete', requireAdmin('owner'), async (req, res) => {
     const orderIds = Array.isArray(req.body?.orderIds) ? req.body.orderIds : [];
     const normalized = [...new Set(orderIds.map((o) => normalizeOrderId(o)).filter(Boolean))].slice(0, 500);
     if (!normalized.length) return res.status(400).json({ error: 'No order ids provided' });
 
-    const list = loadPendingOrders();
+    const list = await loadPendingOrders();
     const set = new Set(normalized);
     const kept = [];
     let deletedCount = 0;
@@ -871,20 +803,20 @@ app.post('/api/admin/orders/bulk-delete', requireAdmin('owner'), (req, res) => {
         if (set.has(id)) deletedCount += 1;
         else kept.push(o);
     });
-    savePendingOrders(kept);
+    await savePendingOrders(kept);
     const missingCount = normalized.length - deletedCount;
     auditAdmin(req, 'order.bulk_delete', { deletedCount, missingCount });
     res.json({ ok: true, deletedCount, missingCount });
 });
 
-app.get('/api/admin/audit', requireAdmin('support'), (req, res) => {
+app.get('/api/admin/audit', requireAdmin('support'), async (req, res) => {
     const limit = Math.max(1, Math.min(500, Number(req.query.limit) || 100));
-    const items = readAudit(limit);
+    const items = await readAudit(limit);
     res.json({ items });
 });
 
-function fulfillPerSpecMonthly(payment, specIds, emailFromPayment) {
-    const db = loadDB();
+async function fulfillPerSpecMonthly(payment, specIds, emailFromPayment) {
+    const db = await loadDB();
     const paymentId = payment.payment_id != null ? String(payment.payment_id) : '';
     if (paymentId && licenseHasPaymentId(db, paymentId)) {
         console.log('IPN duplicate ignored payment_id=', paymentId);
@@ -911,11 +843,11 @@ function fulfillPerSpecMonthly(payment, specIds, emailFromPayment) {
     };
 
     db[newKey] = entry;
-    saveDB(db);
+    await saveDB(db);
 
-    const pending = findPendingByOrderId(payment.order_id);
+    const pending = await findPendingByOrderId(payment.order_id);
     if (pending) {
-        upsertPendingOrder({
+        await upsertPendingOrder({
             orderId: pending.orderId,
             status: 'fulfilled',
             licenseKey: newKey,
@@ -927,8 +859,8 @@ function fulfillPerSpecMonthly(payment, specIds, emailFromPayment) {
     console.log(`License issued: ${newKey} monthly_per_spec specs=${specIds.join(',')}`);
 }
 
-function fulfillLegacyPayment(payment) {
-    const db = loadDB();
+async function fulfillLegacyPayment(payment) {
+    const db = await loadDB();
     const paymentId = payment.payment_id != null ? String(payment.payment_id) : '';
     if (paymentId && licenseHasPaymentId(db, paymentId)) {
         return;
@@ -992,11 +924,11 @@ function fulfillLegacyPayment(payment) {
     }
 
     db[newKey] = entry;
-    saveDB(db);
+    await saveDB(db);
     console.log(`License issued (legacy): ${newKey} plan=${plan}`);
 }
 
-function handleNowpaymentsIpn(req, res) {
+async function handleNowpaymentsIpn(req, res) {
     const ipnSecret = process.env.NOWPAYMENTS_IPN_SECRET || '';
     const sig = req.get('x-nowpayments-sig') || '';
 
@@ -1016,12 +948,12 @@ function handleNowpaymentsIpn(req, res) {
     }
 
     const paymentIdEarly = payment.payment_id != null ? String(payment.payment_id) : '';
-    if (paymentIdEarly && licenseHasPaymentId(loadDB(), paymentIdEarly)) {
+    if (paymentIdEarly && licenseHasPaymentId(await loadDB(), paymentIdEarly)) {
         return res.sendStatus(200);
     }
 
     const orderId = payment.order_id;
-    const pending = orderId ? findPendingByOrderId(orderId) : null;
+    const pending = orderId ? await findPendingByOrderId(orderId) : null;
 
     if (pending && pending.status === 'fulfilled') {
         return res.sendStatus(200);
@@ -1033,9 +965,9 @@ function handleNowpaymentsIpn(req, res) {
         Array.isArray(pending.specIds) &&
         pending.specIds.length > 0
     ) {
-        fulfillPerSpecMonthly(payment, pending.specIds, pending.email);
+        await fulfillPerSpecMonthly(payment, pending.specIds, pending.email);
     } else {
-        fulfillLegacyPayment(payment);
+        await fulfillLegacyPayment(payment);
     }
 
     res.sendStatus(200);
