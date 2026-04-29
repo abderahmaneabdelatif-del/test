@@ -62,15 +62,8 @@ document.addEventListener('DOMContentLoaded', () => {
     const licensesPageText = document.getElementById('licensesPageText');
     const licensesPageSize = document.getElementById('licensesPageSize');
     const licensesSort = document.getElementById('licensesSort');
-    const refreshAuditBtn = document.getElementById('refreshAuditBtn');
-    const clearAuditBtn = document.getElementById('clearAuditBtn');
-    const auditLimit = document.getElementById('auditLimit');
-    const auditTbody = document.querySelector('#auditTable tbody');
-    const exportAuditBtn = document.getElementById('exportAuditBtn');
-    const auditTable = document.getElementById('auditTable');
     const ordersCount = document.getElementById('ordersCount');
     const licensesCount = document.getElementById('licensesCount');
-    const auditCount = document.getElementById('auditCount');
     const globalSearch = document.getElementById('adminGlobalSearch');
     const quickRefreshBtn = document.getElementById('adminQuickRefresh');
     const autoRefreshToggle = document.getElementById('adminAutoRefresh');
@@ -101,7 +94,6 @@ document.addEventListener('DOMContentLoaded', () => {
     const state = {
         orders: { items: [], page: 1, pageSize: 25, sortKey: 'createdAt', sortDir: 'desc' },
         licenses: { items: [], page: 1, pageSize: 25, sortKey: 'createdAt', sortDir: 'desc' },
-        audit: { items: [] },
         savedViews: {
             orders: localStorage.getItem('adminSavedViewOrders') || '',
             licenses: localStorage.getItem('adminSavedViewLicenses') || '',
@@ -281,6 +273,9 @@ document.addEventListener('DOMContentLoaded', () => {
         } else if (view === 'expiring_soon') {
             if (licensesStatus) licensesStatus.value = 'active';
             if (licensesSort) licensesSort.value = 'expiresAt:asc';
+        } else if (view === '') {
+            if (licensesStatus) licensesStatus.value = '';
+            if (licensesSort) licensesSort.value = 'createdAt:desc';
         }
     }
 
@@ -515,6 +510,27 @@ document.addEventListener('DOMContentLoaded', () => {
         if (licensesPrev) licensesPrev.disabled = cur <= 1;
         if (licensesNext) licensesNext.disabled = cur >= totalPages;
 
+        // Quick stats
+        const activeCount = items.filter(l => l.active && !l.isExpired).length;
+        const expiringCount = items.filter(l => {
+            if (!l.active || l.plan === 'lifetime') return false;
+            const ms = new Date(l.expiresAt).getTime() - Date.now();
+            return ms > 0 && ms <= 7 * 24 * 60 * 60 * 1000;
+        }).length;
+        const expiredCount = items.filter(l => l.isExpired).length;
+        const licActiveEl = document.getElementById('licActiveCount');
+        const licExpiringEl = document.getElementById('licExpiringCount');
+        const licExpiredEl = document.getElementById('licExpiredCount');
+        const licPagerInfo = document.getElementById('licPagerInfo');
+        if (licActiveEl) licActiveEl.textContent = activeCount;
+        if (licExpiringEl) licExpiringEl.textContent = expiringCount;
+        if (licExpiredEl) licExpiredEl.textContent = expiredCount;
+        if (licPagerInfo) {
+            const from = sorted.length ? (cur - 1) * pageSize + 1 : 0;
+            const to = Math.min(cur * pageSize, sorted.length);
+            licPagerInfo.textContent = `Showing ${from}–${to} of ${sorted.length} licenses`;
+        }
+
         if (!slice.length) {
             licensesList.innerHTML = '<div class="admin-empty">No licenses found.</div>';
             return;
@@ -525,66 +541,168 @@ document.addEventListener('DOMContentLoaded', () => {
                 const specList = Array.isArray(l.specs) ? l.specs : [];
                 const specLabels = specList.map(id => specsMap.get(id) || id);
                 const specsText = specLabels.length ? specLabels.join(', ') : '-';
-                const specChips = specLabels
-                    .slice(0, 3)
-                    .map((x) => `<span class="admin-chip admin-chip--spec">${esc(x)}</span>`)
-                    .join('');
-                const specMore =
-                    specLabels.length > 3 ? `<span class="admin-chip admin-chip--muted">+${specLabels.length - 3}</span>` : '';
-                const specCell =
-                    specLabels.length === 0
-                        ? '<span class="admin-truncate">-</span>'
-                        : `<div class="admin-chips" title="${esc(specsText)}">${specChips}${specMore}</div>`;
-                const email = l.email ? esc(l.email) : '-';
+                const email = l.email ? esc(l.email) : '';
+                const emailDisplay = email || 'No email';
                 const exp = l.plan === 'lifetime' ? 'Never' : fmtDate(l.expiresAt);
                 const status = licenseStatusText(l);
                 const checked = selectedLicenses.has(String(l.key || '')) ? 'checked' : '';
-                const history = (state.audit.items || [])
-                    .filter((a) => JSON.stringify(a.details || {}).toUpperCase().includes(String(l.key || '').toUpperCase()))
-                    .slice(0, 4)
-                    .map((a) => `<div class="admin-item-sub">• ${esc(a.action || '')} · ${esc(fmtDate(a.at))}</div>`)
-                    .join('');
-                return `<details class="admin-item" data-key="${esc(l.key)}">
-                    <summary class="admin-item-summary">
-                        <div class="admin-item-left">
-                            <div class="admin-item-title"><code>${highlight(l.key, q)}</code></div>
-                            <div class="admin-item-sub">${highlight(l.plan || '-', q)} · Expires: ${highlight(exp, q)}</div>
-                        </div>
-                        <div class="admin-item-right">
-                            ${statusBadge(status)}
-                        </div>
-                    </summary>
-                    <div class="admin-item-body">
-                        <div class="admin-item-grid">
-                            <div class="admin-item-field">
-                                <div class="admin-item-label">Email</div>
-                                <div class="admin-item-value"><span class="admin-truncate" title="${esc(email)}">${highlight(email, q)}</span></div>
+                const w = canWrite();
+
+                // Plan badge colors
+                const planColors = {
+                    monthly: 'plan-monthly',
+                    monthly_per_spec: 'plan-spec',
+                    lifetime: 'plan-lifetime',
+                    custom: 'plan-custom',
+                };
+                const planCls = planColors[l.plan] || 'plan-custom';
+                const planLabel = {
+                    monthly: 'Monthly',
+                    monthly_per_spec: 'Per Spec',
+                    lifetime: 'Lifetime',
+                    custom: 'Custom',
+                }[l.plan] || (l.plan || 'Unknown');
+
+                // Expiry progress bar (0-100%)
+                let expiryBar = '';
+                let expiryPct = 100;
+                if (l.plan !== 'lifetime' && l.expiresAt && l.createdAt) {
+                    const total = new Date(l.expiresAt) - new Date(l.createdAt);
+                    const remaining = new Date(l.expiresAt) - Date.now();
+                    expiryPct = Math.max(0, Math.min(100, Math.round((remaining / total) * 100)));
+                    const barCls = expiryPct < 20 ? 'bar-danger' : expiryPct < 50 ? 'bar-warn' : 'bar-ok';
+                    expiryBar = `
+                        <div class="lic-card-expiry">
+                            <div class="lic-expiry-bar">
+                                <div class="lic-expiry-fill ${barCls}" style="width:${expiryPct}%"></div>
                             </div>
-                            <div class="admin-item-field">
-                                <div class="admin-item-label">Specs</div>
-                                <div class="admin-item-value">${specCell}</div>
+                            <span class="lic-expiry-label">${exp}</span>
+                        </div>`;
+                } else if (l.plan === 'lifetime') {
+                    expiryBar = `
+                        <div class="lic-card-expiry">
+                            <div class="lic-expiry-bar">
+                                <div class="lic-expiry-fill bar-lifetime" style="width:100%"></div>
                             </div>
-                            <div class="admin-item-field">
-                                <div class="admin-item-label">Timeline</div>
-                                <div class="admin-item-value">${history || '<span class="admin-truncate">No events</span>'}</div>
+                            <span class="lic-expiry-label">Never expires</span>
+                        </div>`;
+                }
+
+                // Spec chips (max 4)
+                const specChipsHtml = specLabels.length
+                    ? specLabels.slice(0, 4).map(x =>
+                        `<span class="lic-spec-chip">${esc(x)}</span>`
+                      ).join('') + (specLabels.length > 4
+                        ? `<span class="lic-spec-chip lic-spec-more">+${specLabels.length - 4}</span>`
+                        : '')
+                    : '<span class="lic-spec-chip lic-spec-none">All Specs</span>';
+
+                // Timeline HTML removed as audit is removed
+                const timelineHtml = '<div class="lic-timeline-empty">History unavailable</div>';
+
+                // HWID bound indicator
+                const boundBadge = l.isBound
+                    ? `<span class="lic-bound-badge is-bound">
+                           <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10 13a5 5 0 007.54.54l3-3a5 5 0 00-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 00-7.54-.54l-3 3a5 5 0 007.07 7.07l1.71-1.71"/></svg>
+                           Bound
+                       </span>`
+                    : `<span class="lic-bound-badge is-unbound">
+                           <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10 13a5 5 0 007.54.54l3-3a5 5 0 00-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 00-7.54-.54l-3 3a5 5 0 007.07 7.07l1.71-1.71"/></svg>
+                           Unbound
+                       </span>`;
+
+                // Avatar initials from email
+                const initials = email
+                    ? email.substring(0, 2).toUpperCase()
+                    : (l.plan || '?').substring(0, 2).toUpperCase();
+
+                // Status indicator class
+                const statusCls = status === 'active' ? 'status-ok' : status === 'disabled' ? 'status-bad' : 'status-warn';
+
+                return `<div class="lic-card ${statusCls === 'status-bad' ? 'lic-card--disabled' : ''}" data-key="${esc(l.key)}">
+                    <!-- Card Header -->
+                    <div class="lic-card-header">
+                        <div class="lic-card-header-left">
+                            <div class="lic-card-check">
+                                <input type="checkbox" class="lic-check-input admin-row-check"
+                                    data-license-check="${esc(l.key)}" ${checked}
+                                    id="lic-cb-${esc(l.key)}">
+                                <label class="lic-check-label" for="lic-cb-${esc(l.key)}"></label>
                             </div>
-                            <div class="admin-item-field admin-item-field--actions">
-                                <div class="admin-item-label">Actions</div>
-                                <div class="admin-item-value">
-                                    <div class="admin-actions">
-                                        <label class="admin-multi-check"><input type="checkbox" class="admin-row-check" data-license-check="${esc(l.key)}" ${checked}> Select</label>
-                                        <button class="btn-action admin-action-btn" data-act="toggle" ${canWrite() ? '' : 'disabled'}>Toggle</button>
-                                        <button class="btn-action admin-action-btn" data-act="extend" ${canWrite() ? '' : 'disabled'}>+1 Month</button>
-                                        <button class="btn-action admin-action-btn" data-act="reset" ${canWrite() ? '' : 'disabled'}>Reset HWID</button>
-                                        <button class="btn-action admin-action-btn admin-danger" data-act="delete" ${canWrite() ? '' : 'disabled'}>Delete</button>
-                                    </div>
+                            <div class="lic-avatar">${esc(initials)}</div>
+                            <div class="lic-card-identity">
+                                <div class="lic-card-key">
+                                    <code class="lic-key-code">${highlight(l.key, q)}</code>
+                                    <button class="lic-copy-btn" data-copy="${esc(l.key)}" title="Copy key">
+                                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>
+                                    </button>
+                                </div>
+                                <div class="lic-card-meta">
+                                    ${email
+                                        ? `<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
+                                         <span>${highlight(emailDisplay, q)}</span>`
+                                        : `<span style="color:var(--adm-text-3)">No email</span>`}
                                 </div>
                             </div>
                         </div>
+                        <div class="lic-card-header-right">
+                            <span class="lic-plan-badge ${planCls}">${esc(planLabel)}</span>
+                            ${boundBadge}
+                            <div class="lic-status-dot ${statusCls}" title="${esc(status)}"></div>
+                            <span class="admin-pill ${status === 'active' ? 'ok' : status === 'disabled' ? 'bad' : 'warn'}">${esc(status)}</span>
+                        </div>
                     </div>
-                </details>`;
+
+                    <!-- Specs Row -->
+                    <div class="lic-card-specs">
+                        <span class="lic-specs-label">Specs</span>
+                        <div class="lic-spec-chips">${specChipsHtml}</div>
+                    </div>
+
+                    <!-- Expiry Bar -->
+                    ${expiryBar}
+
+                    <!-- Action buttons + Expand toggle -->
+                    <div class="lic-card-footer">
+                        <div class="lic-card-actions">
+                            <button class="lic-action-btn" data-act="toggle" title="Toggle active" ${w ? '' : 'disabled'}>
+                                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="1" y="5" width="22" height="14" rx="7"/><circle cx="${l.active ? '16' : '8'}" cy="12" r="3"/></svg>
+                                Toggle
+                            </button>
+                            <button class="lic-action-btn" data-act="extend" title="+1 month" ${w ? '' : 'disabled'}>
+                                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+                                +1 Month
+                            </button>
+                            <button class="lic-action-btn" data-act="reset" title="Reset HWID" ${w ? '' : 'disabled'}>
+                                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 102.13-9.36L1 10"/></svg>
+                                Reset HWID
+                            </button>
+                            <button class="lic-action-btn lic-action-danger" data-act="delete" title="Delete" ${w ? '' : 'disabled'}>
+                                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg>
+                                Delete
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Timeline removed -->
+                </div>`;
             })
             .join('');
+
+        // Copy key buttons
+        licensesList.querySelectorAll('.lic-copy-btn').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                const text = btn.dataset.copy;
+                navigator.clipboard?.writeText(text).then(() => {
+                    btn.innerHTML = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--adm-accent)" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>`;
+                    setTimeout(() => {
+                        btn.innerHTML = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>`;
+                    }, 1500);
+                });
+            });
+        });
+
         updateBulkButtons();
     }
 
@@ -597,29 +715,6 @@ document.addEventListener('DOMContentLoaded', () => {
         if (licensesCount) licensesCount.textContent = String(Array.isArray(data.items) ? data.items.length : 0);
         state.licenses.items = Array.isArray(data.items) ? data.items : [];
         renderLicenses();
-    }
-
-    async function loadAudit() {
-        auditTbody.innerHTML = '<tr><td colspan="4">Loading...</td></tr>';
-        const limit = Math.max(10, Math.min(500, Number(auditLimit.value) || 100));
-        const data = await adminFetch(`/api/admin/audit?limit=${encodeURIComponent(limit)}`);
-        if (auditCount) auditCount.textContent = String(Array.isArray(data.items) ? data.items.length : 0);
-        if (!Array.isArray(data.items) || data.items.length === 0) {
-            auditTbody.innerHTML = '<tr><td colspan="4">No audit entries.</td></tr>';
-            return;
-        }
-        auditTbody.innerHTML = data.items
-            .map((a) => {
-                const actor = a.actor ? `${a.actor.name || 'admin'} (${a.actor.role || '-'})` : '-';
-                return `<tr>
-                    <td>${esc(fmtDate(a.at))}</td>
-                    <td>${esc(actor)}</td>
-                    <td>${esc(a.action || '-')}</td>
-                    <td><code>${esc(JSON.stringify(a.details || {}))}</code></td>
-                </tr>`;
-            })
-            .join('');
-        state.audit.items = Array.isArray(data.items) ? data.items : [];
     }
 
     async function runLicenseAction(key, act) {
@@ -664,7 +759,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     async function refreshAll() {
-        await Promise.all([loadOrders(), loadLicenses(), loadAudit(), loadConfig()]);
+        await Promise.all([loadOrders(), loadLicenses(), loadConfig()]);
         await loadOverview();
         markRefreshedNow();
     }
@@ -773,6 +868,118 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
+    // ── CREATE LICENSE MULTI-STEP WIZARD ──
+    const planCards = document.querySelectorAll('.create-plan-card');
+    const stepEls = document.querySelectorAll('.create-step');
+    const stepPanels = [
+        document.getElementById('createStep1'),
+        document.getElementById('createStep2'),
+        document.getElementById('createStep3'),
+    ];
+    const reviewSummary = document.getElementById('createReviewSummary');
+    const specsCountEl = document.getElementById('createSpecsCount');
+    const specsSearchEl = document.getElementById('createSpecsSearch');
+    let currentCreateStep = 1;
+
+    // Plan card click
+    planCards.forEach(card => {
+        card.addEventListener('click', () => {
+            planCards.forEach(c => c.classList.remove('is-selected'));
+            card.classList.add('is-selected');
+            const radio = card.querySelector('input[type=radio]');
+            if (radio) radio.checked = true;
+            if (createPlan) createPlan.value = card.dataset.plan;
+            syncCreatePlanInputs();
+        });
+    });
+
+    // Step navigation
+    function goToStep(step) {
+        currentCreateStep = step;
+        stepPanels.forEach((p, i) => {
+            if (p) p.hidden = (i + 1) !== step;
+        });
+        stepEls.forEach(el => {
+            const s = Number(el.dataset.step);
+            el.classList.remove('is-active', 'is-done');
+            if (s === step) el.classList.add('is-active');
+            else if (s < step) el.classList.add('is-done');
+        });
+        // Update step lines
+        const lines = document.querySelectorAll('.create-step-line');
+        lines.forEach((line, i) => {
+            if (i < step - 1) line.style.background = 'var(--adm-accent)';
+            else line.style.background = 'var(--adm-border)';
+        });
+        // Build review on step 3
+        if (step === 3) buildReviewSummary();
+    }
+
+    document.querySelectorAll('.create-next-btn, .create-back-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const goto = Number(btn.dataset.goto);
+            if (goto) goToStep(goto);
+        });
+    });
+
+    // Specs search filter
+    if (specsSearchEl) {
+        specsSearchEl.addEventListener('input', () => {
+            const q = specsSearchEl.value.toLowerCase().trim();
+            document.querySelectorAll('#createSpecsContainer .admin-multi-check').forEach(label => {
+                const text = label.textContent.toLowerCase();
+                label.style.display = !q || text.includes(q) ? '' : 'none';
+            });
+        });
+    }
+
+    // Update specs count
+    if (createSpecsContainer) {
+        createSpecsContainer.addEventListener('change', () => {
+            const count = document.querySelectorAll('.create-spec-cb:checked').length;
+            if (specsCountEl) specsCountEl.textContent = `${count} selected`;
+        });
+    }
+
+    function buildReviewSummary() {
+        if (!reviewSummary) return;
+        const plan = createPlan ? createPlan.value : 'monthly';
+        const planNames = { monthly: 'Monthly', monthly_per_spec: 'Per Spec', lifetime: 'Lifetime', custom: 'Custom' };
+        const email = createEmail ? (createEmail.value || '').trim() : '';
+        const selectedSpecs = Array.from(document.querySelectorAll('.create-spec-cb:checked')).map(cb => {
+            const label = cb.parentElement?.textContent?.trim() || cb.value;
+            return label;
+        });
+
+        let durationText = '';
+        if (plan === 'lifetime') {
+            durationText = 'Never expires';
+        } else if (plan === 'custom') {
+            durationText = `${createDurationValue?.value || 1} ${createDurationUnit?.value || 'minutes'}`;
+        } else {
+            durationText = `${createMonths?.value || 1} month(s)`;
+        }
+
+        reviewSummary.innerHTML = `
+            <div class="create-review-item">
+                <div class="create-review-label">Plan</div>
+                <div class="create-review-value">${esc(planNames[plan] || plan)}</div>
+            </div>
+            <div class="create-review-item">
+                <div class="create-review-label">Duration</div>
+                <div class="create-review-value">${esc(durationText)}</div>
+            </div>
+            <div class="create-review-item">
+                <div class="create-review-label">Email</div>
+                <div class="create-review-value">${email ? esc(email) : '<span style="color:var(--adm-text-3)">Not set</span>'}</div>
+            </div>
+            <div class="create-review-item">
+                <div class="create-review-label">Specs (${selectedSpecs.length})</div>
+                <div class="create-review-value">${selectedSpecs.length ? selectedSpecs.map(s => `<code>${esc(s)}</code>`).join(' ') : '<span style="color:var(--adm-text-3)">None selected</span>'}</div>
+            </div>
+        `;
+    }
+
     createBtn.addEventListener('click', async () => {
         createBtn.disabled = true;
         setCreateMessage('');
@@ -795,6 +1002,11 @@ document.addEventListener('DOMContentLoaded', () => {
             });
             setCreateMessage(`License created: ${data.key}`);
             document.querySelectorAll('.create-spec-cb:checked').forEach(cb => cb.checked = false);
+            if (specsCountEl) specsCountEl.textContent = '0 selected';
+            // Reset to step 1
+            goToStep(1);
+            planCards.forEach(c => c.classList.remove('is-selected'));
+            planCards[0]?.classList.add('is-selected');
             await refreshAll();
         } catch (e) {
             setCreateMessage(e.message || 'Create failed.', true);
@@ -1046,44 +1258,6 @@ document.addEventListener('DOMContentLoaded', () => {
             await refreshAll();
         });
     }
-    refreshAuditBtn.addEventListener('click', () => {
-        loadAudit().catch((e) => alert(e.message || 'Cannot load audit'));
-    });
-    if (clearAuditBtn) {
-        clearAuditBtn.addEventListener('click', async () => {
-            if (!canWrite()) return;
-            const ok = await askConfirm({
-                title: 'Clear audit log',
-                text: 'Delete ALL audit entries? This cannot be undone.',
-                keyword: 'CLEAR',
-            });
-            if (!ok) return;
-            clearAuditBtn.disabled = true;
-            try {
-                await adminFetch('/api/admin/audit/clear', { method: 'POST' });
-                await loadAudit();
-            } catch (e) {
-                alert(e.message || 'Failed to clear audit log');
-            } finally {
-                clearAuditBtn.disabled = !canWrite();
-            }
-        });
-    }
-    if (exportAuditBtn) {
-        exportAuditBtn.addEventListener('click', () => {
-            const rows = [
-                ['at', 'actor', 'action', 'details', 'ip'],
-                ...state.audit.items.map((a) => [
-                    a.at || '',
-                    a.actor ? `${a.actor.name || ''} (${a.actor.role || ''})` : '',
-                    a.action || '',
-                    JSON.stringify(a.details || {}),
-                    a.ip || '',
-                ]),
-            ];
-            downloadCsv('audit.csv', rows);
-        });
-    }
     if (quickRefreshBtn) {
         quickRefreshBtn.addEventListener('click', () => {
             refreshAll().catch((e) => alert(e.message || 'Cannot refresh dashboard'));
@@ -1115,6 +1289,35 @@ document.addEventListener('DOMContentLoaded', () => {
             localStorage.setItem('adminSavedViewLicenses', state.savedViews.licenses);
             applyLicenseSavedView(state.savedViews.licenses);
             refreshAll().catch(() => {});
+        });
+    }
+
+    // License Filter Tabs
+    const licTabs = document.querySelectorAll('.lic-tab');
+    if (licTabs.length > 0) {
+        licTabs.forEach(tab => {
+            tab.addEventListener('click', () => {
+                const view = tab.getAttribute('data-view') || '';
+                
+                // Update UI
+                licTabs.forEach(t => t.classList.remove('is-active'));
+                tab.classList.add('is-active');
+
+                // Sync and apply state
+                if (licensesSavedView) licensesSavedView.value = view;
+                state.savedViews.licenses = view;
+                localStorage.setItem('adminSavedViewLicenses', view);
+                
+                applyLicenseSavedView(view);
+                refreshAll().catch(() => {});
+            });
+        });
+    }
+
+    // Initialize Active Tab
+    if (state.savedViews.licenses) {
+        licTabs.forEach(tab => {
+            tab.classList.toggle('is-active', (tab.getAttribute('data-view') || '') === state.savedViews.licenses);
         });
     }
     ordersSearch.addEventListener('input', () => {
@@ -1198,7 +1401,8 @@ document.addEventListener('DOMContentLoaded', () => {
             }
             return;
         }
-        const btn = e.target.closest('.admin-action-btn');
+        // Support both old .admin-action-btn and new .lic-action-btn
+        const btn = e.target.closest('.admin-action-btn, .lic-action-btn');
         if (!btn) return;
         const card = e.target.closest('[data-key]');
         if (!card) return;
@@ -1250,4 +1454,145 @@ document.addEventListener('DOMContentLoaded', () => {
             globalSearch.select();
         }
     });
+
+    // ── Sidebar toggle ──
+    const sidebarToggleBtn = document.getElementById('sidebarToggle');
+    if (sidebarToggleBtn) {
+        const collapsed = localStorage.getItem('adminSidebarCollapsed') === 'true';
+        if (collapsed) document.body.classList.add('sidebar-collapsed');
+        sidebarToggleBtn.addEventListener('click', () => {
+            document.body.classList.toggle('sidebar-collapsed');
+            localStorage.setItem('adminSidebarCollapsed', document.body.classList.contains('sidebar-collapsed'));
+        });
+    }
+
+    // ── Toast notifications ──
+    window.adminToast = function(message, type = 'info') {
+        const container = document.getElementById('adminToastContainer');
+        if (!container) return;
+        const icons = {
+            success: '✓',
+            error: '✕',
+            info: 'ℹ',
+            warn: '⚠',
+        };
+        const toast = document.createElement('div');
+        toast.className = `admin-toast toast-${type}`;
+        toast.innerHTML = `<span style="font-size:16px;">${icons[type] || icons.info}</span> ${esc(message)}`;
+        container.appendChild(toast);
+        setTimeout(() => toast.remove(), 4200);
+    };
+
+    // Override setCreateMessage to also show toast
+    const origSetCreateMsg = setCreateMessage;
+    setCreateMessage = function(msg, isError) {
+        origSetCreateMsg(msg, isError);
+        if (msg) window.adminToast(msg, isError ? 'error' : 'success');
+    };
+
+    // ── Live Activity Feed (WebSocket) ──
+    const activityFeed = document.getElementById('adminActivityFeed');
+    const liveDot = document.getElementById('adminLiveDot');
+    const activityItems = [];
+    let ws = null;
+
+    function renderActivityItem(item) {
+        const typeMap = {
+            'license.create': { icon: '+', cls: 'type-create', verb: 'created license' },
+            'license.toggle_active': { icon: '⟳', cls: 'type-activate', verb: 'toggled license' },
+            'license.extend': { icon: '↑', cls: 'type-activate', verb: 'extended license' },
+            'license.delete': { icon: '✕', cls: 'type-delete', verb: 'deleted license' },
+            'license.reset_hwid': { icon: '↻', cls: 'type-activate', verb: 'reset HWID for' },
+            'license.bulk_delete': { icon: '✕✕', cls: 'type-delete', verb: 'bulk deleted licenses' },
+            'order.create': { icon: '$', cls: 'type-payment', verb: 'new order' },
+            'order.fulfill': { icon: '✓', cls: 'type-create', verb: 'fulfilled order' },
+            'order.delete': { icon: '✕', cls: 'type-delete', verb: 'deleted order' },
+            'config.update_price': { icon: '⚙', cls: 'type-activate', verb: 'updated pricing' },
+            'audit.clear': { icon: '🗑', cls: 'type-delete', verb: 'cleared audit log' },
+        };
+        const info = typeMap[item.action] || { icon: '•', cls: 'type-activate', verb: item.action || 'action' };
+        const actor = item.actor ? (item.actor.name || 'admin') : 'system';
+        const details = item.details ? (item.details.key || item.details.orderId || '') : '';
+        const time = item.at ? new Date(item.at).toLocaleTimeString() : '';
+
+        return `<div class="admin-activity-item">
+            <div class="admin-activity-icon ${info.cls}">${info.icon}</div>
+            <div class="admin-activity-text"><strong>${esc(actor)}</strong> ${esc(info.verb)} ${details ? `<code>${esc(details)}</code>` : ''}</div>
+            <div class="admin-activity-time">${esc(time)}</div>
+        </div>`;
+    }
+
+    function renderActivityFeed() {
+        if (!activityFeed) return;
+        if (activityItems.length === 0) {
+            activityFeed.innerHTML = '<div class="admin-empty">Waiting for activity...</div>';
+            return;
+        }
+        activityFeed.innerHTML = activityItems.map(renderActivityItem).join('');
+    }
+
+    function connectWebSocket() {
+        if (ws) { try { ws.close(); } catch(_) {} }
+        const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
+        const url = `${protocol}//${location.host}/ws/admin`;
+        ws = new WebSocket(url);
+
+        ws.onopen = () => {
+            if (liveDot) {
+                liveDot.style.background = 'var(--adm-accent)';
+                liveDot.style.boxShadow = '0 0 8px rgba(0,229,192,0.5)';
+            }
+        };
+
+        ws.onmessage = (event) => {
+            try {
+                const data = JSON.parse(event.data);
+                activityItems.unshift(data);
+                if (activityItems.length > 50) activityItems.length = 50;
+                renderActivityFeed();
+                // Toast for important events
+                if (data.action && data.action.includes('create')) {
+                    window.adminToast(`New: ${data.action}`, 'success');
+                }
+            } catch (_) {}
+        };
+
+        ws.onclose = () => {
+            if (liveDot) {
+                liveDot.style.background = 'var(--adm-danger)';
+                liveDot.style.boxShadow = '0 0 8px rgba(255,90,90,0.5)';
+            }
+            // Reconnect after 5 seconds
+            setTimeout(() => {
+                if (token) connectWebSocket();
+            }, 5000);
+        };
+
+        ws.onerror = () => { try { ws.close(); } catch(_) {} };
+    }
+
+    // Load initial activity from audit
+    async function loadInitialActivity() {
+        if (!activityFeed) return;
+        try {
+            const data = await adminFetch('/api/admin/audit?limit=20');
+            if (Array.isArray(data.items)) {
+                activityItems.length = 0;
+                data.items.forEach(item => activityItems.push(item));
+                renderActivityFeed();
+            }
+        } catch (_) {}
+    }
+
+    // Start WebSocket after login
+    const origSetAuth = setAuthenticated;
+    setAuthenticated = function(on) {
+        origSetAuth(on);
+        if (on) {
+            connectWebSocket();
+            loadInitialActivity();
+        } else {
+            if (ws) { try { ws.close(); } catch(_) {} ws = null; }
+        }
+    };
 });

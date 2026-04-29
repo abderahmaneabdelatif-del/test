@@ -3,48 +3,103 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Max Combat Assistant - Admin</title>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Orbitron:wght@700;900&display=swap" rel="stylesheet">
+    <title>Max Combat Assistant — Admin</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Orbitron:wght@700;900&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="css/style.css">
     <link rel="stylesheet" href="css/admin.css">
 </head>
 <body class="admin-body">
+    <!-- ── TOP NAV ── -->
     <nav class="site-nav admin-topbar" id="adminTopbar" hidden>
         <div class="site-nav-inner">
-            <a href="index.html" class="logo"><span class="logo-mark" aria-hidden="true">⚔</span> Max Combat <span class="logo-accent">Assistant</span></a>
-            <div class="nav-links">
-                <a href="index.html">Website</a>
-                <a href="dashboard.html">License Portal</a>
-                <a href="#" class="btn-action" id="adminLogoutBtn">Logout</a>
+            <div class="admin-topbar-left">
+                <button class="admin-sidebar-toggle" id="sidebarToggle" type="button" title="Toggle sidebar">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+                </button>
+                <a href="index.html" class="logo"><span class="logo-mark" aria-hidden="true">⚔</span> Max Combat <span class="logo-accent">Assistant</span></a>
+            </div>
+            <div class="admin-topbar-right">
+                <div class="admin-topbar-env" id="adminEnvBadge">
+                    <span class="admin-env-dot"></span>
+                    <span>Production</span>
+                </div>
+                <a href="index.html" class="admin-topbar-link">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
+                    Website
+                </a>
+                <a href="dashboard.html" class="admin-topbar-link">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+                    Portal
+                </a>
+                <button class="admin-topbar-logout" id="adminLogoutBtn" type="button">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+                    Logout
+                </button>
             </div>
         </div>
     </nav>
 
     <main class="admin-wrap">
-        <section class="admin-hero card card--panel" id="adminHero" hidden>
-            <p class="admin-hero-kicker">Control Center</p>
-            <h1 class="admin-hero-title">Professional Admin Dashboard</h1>
-            <p class="admin-hero-text">Manage licenses, monitor orders, and review audit trails from one secure workspace.</p>
+        <!-- ── AUTH CARD ── -->
+        <section class="admin-auth-card" id="adminAuthCard">
+            <div class="admin-auth-inner">
+                <div class="admin-auth-icon">
+                    <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="var(--adm-accent)" stroke-width="1.5"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0110 0v4"/><circle cx="12" cy="16" r="1"/></svg>
+                </div>
+                <h2 class="admin-auth-title">Admin Access</h2>
+                <p class="admin-auth-subtitle">Enter your admin token from <code>ADMIN_TOKEN</code></p>
+                <input id="adminTokenInput" class="input-box admin-token-input" type="password" placeholder="Enter admin token..." autocomplete="off" spellcheck="false">
+                <button id="adminLoginBtn" class="btn btn-block" type="button">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 3h4a2 2 0 012 2v14a2 2 0 01-2 2h-4"/><polyline points="10 17 15 12 10 7"/><line x1="15" y1="12" x2="3" y2="12"/></svg>
+                    Sign In
+                </button>
+                <p id="adminAuthMsg" class="admin-message"></p>
+            </div>
         </section>
 
-        <section class="admin-card card card--panel" id="adminAuthCard">
-            <h2 class="admin-title">Admin Access</h2>
-            <p class="admin-subtitle">Enter your admin token from server environment variable <code>ADMIN_TOKEN</code>.</p>
-            <input id="adminTokenInput" class="input-box admin-token-input" type="password" placeholder="ADMIN_TOKEN" autocomplete="off" spellcheck="false">
-            <button id="adminLoginBtn" class="btn btn-block" type="button">Sign in</button>
-            <p id="adminAuthMsg" class="admin-message"></p>
+        <!-- ── HERO ── -->
+        <section class="admin-hero" id="adminHero" hidden>
+            <div class="admin-hero-content">
+                <p class="admin-hero-kicker">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+                    Control Center
+                </p>
+                <h1 class="admin-hero-title">Admin Dashboard</h1>
+                <p class="admin-hero-text">Manage licenses, monitor orders, and review audit trails from one secure workspace.</p>
+            </div>
+            <div class="admin-hero-stats" id="adminHeroStats"></div>
         </section>
 
+        <!-- ── PANEL (sidebar + content) ── -->
         <section class="admin-panel" id="adminPanel" hidden>
-            <aside class="admin-sidebar card card--panel">
+            <aside class="admin-sidebar" id="adminSidebar">
                 <div class="admin-session-line" id="adminSessionLine"></div>
                 <nav class="admin-side-nav" id="adminSideNav">
-                    <a href="#admin-overview" class="admin-nav-link is-active">Overview</a>
-                    <a href="#admin-create" class="admin-nav-link">Create License</a>
-                    <a href="#admin-config" class="admin-nav-link">Configuration</a>
-                    <a href="#admin-orders" class="admin-nav-link">Orders</a>
-                    <a href="#admin-licenses" class="admin-nav-link">Licenses</a>
-                    <a href="#admin-audit" class="admin-nav-link">Audit Log</a>
+                    <a href="#admin-overview" class="admin-nav-link is-active" data-section="overview">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+                        <span class="admin-nav-text">Overview</span>
+                    </a>
+                    <a href="#admin-create" class="admin-nav-link" data-section="create">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/></svg>
+                        <span class="admin-nav-text">Create License</span>
+                    </a>
+                    <a href="#admin-config" class="admin-nav-link" data-section="config">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>
+                        <span class="admin-nav-text">Configuration</span>
+                    </a>
+                    <a href="#admin-orders" class="admin-nav-link" data-section="orders">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 2L3 6v14a2 2 0 002 2h14a2 2 0 002-2V6l-3-4z"/><line x1="3" y1="6" x2="21" y2="6"/><path d="M16 10a4 4 0 01-8 0"/></svg>
+                        <span class="admin-nav-text">Orders</span>
+                    </a>
+                    <a href="#admin-licenses" class="admin-nav-link" data-section="licenses">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="1" y="4" width="22" height="16" rx="2"/><line x1="1" y1="10" x2="23" y2="10"/></svg>
+                        <span class="admin-nav-text">Licenses</span>
+                    </a>
+
+                    <a href="#admin-activity" class="admin-nav-link" data-section="activity">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+                        <span class="admin-nav-text">Live Activity</span>
+                    </a>
                 </nav>
                 <div class="admin-side-meta">
                     <span>Last refresh</span>
@@ -55,198 +110,414 @@
             </aside>
 
             <div class="admin-content">
-            <div class="admin-kpis-section" id="admin-overview">
-                <h3 class="admin-section-title">Overview</h3>
-                <div class="admin-kpis" id="adminKpis"></div>
-            </div>
-
-            <div class="admin-command-bar card card--panel">
-                <div class="admin-command-left">
-                    <input id="adminGlobalSearch" class="input-box admin-small-input" type="search" placeholder="Global search: order, key, email, spec">
-                    <p class="admin-command-hint">Tip: press <kbd>Ctrl</kbd> + <kbd>K</kbd> to focus search</p>
+                <!-- KPIs -->
+                <div class="admin-kpis-section" id="admin-overview">
+                    <h3 class="admin-section-title">Overview</h3>
+                    <div class="admin-kpis" id="adminKpis"></div>
                 </div>
-                <div class="admin-command-right">
-                    <label class="admin-toggle">
-                        <input id="adminAutoRefresh" type="checkbox">
-                        <span>Auto refresh (60s)</span>
-                    </label>
-                    <button id="adminQuickRefresh" class="btn" type="button">Refresh All</button>
-                </div>
-            </div>
 
-            <div class="admin-grid">
-                <div class="admin-card card card--panel" id="admin-create">
-                    <h3 class="admin-section-title">Create License</h3>
-                    <div class="admin-form-grid">
-                        <label class="admin-label">Plan
-                            <select id="createPlan" class="spec-select">
+                <!-- Command bar -->
+                <div class="admin-command-bar card card--panel">
+                    <div class="admin-command-left">
+                        <div class="admin-search-wrap">
+                            <svg class="admin-search-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+                            <input id="adminGlobalSearch" class="input-box admin-small-input admin-search-input" type="search" placeholder="Search orders, licenses, keys, emails...">
+                            <kbd class="admin-search-kbd">⌘K</kbd>
+                        </div>
+                    </div>
+                    <div class="admin-command-right">
+                        <label class="admin-toggle">
+                            <input id="adminAutoRefresh" type="checkbox">
+                            <span>Auto refresh</span>
+                        </label>
+                        <button id="adminQuickRefresh" class="btn" type="button">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/></svg>
+                            Refresh
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Main grid -->
+                <div class="admin-grid">
+                    <!-- Create License -->
+                    <div class="admin-card card card--panel admin-create-card" id="admin-create">
+                        <h3 class="admin-section-title">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--adm-accent)" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/></svg>
+                            Create License
+                        </h3>
+
+                        <!-- Step Indicators -->
+                        <div class="create-steps">
+                            <div class="create-step is-active" data-step="1">
+                                <div class="create-step-num">1</div>
+                                <span>Plan</span>
+                            </div>
+                            <div class="create-step-line"></div>
+                            <div class="create-step" data-step="2">
+                                <div class="create-step-num">2</div>
+                                <span>Details</span>
+                            </div>
+                            <div class="create-step-line"></div>
+                            <div class="create-step" data-step="3">
+                                <div class="create-step-num">3</div>
+                                <span>Confirm</span>
+                            </div>
+                        </div>
+
+                        <!-- Step 1: Plan Selection -->
+                        <div class="create-panel" id="createStep1">
+                            <p class="create-panel-title">Choose a plan type</p>
+                            <div class="create-plan-grid">
+                                <label class="create-plan-card is-selected" data-plan="monthly">
+                                    <input type="radio" name="createPlanRadio" value="monthly" checked hidden>
+                                    <div class="create-plan-icon">
+                                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+                                    </div>
+                                    <strong>Monthly</strong>
+                                    <span class="create-plan-desc">All specs, billed monthly</span>
+                                </label>
+                                <label class="create-plan-card" data-plan="monthly_per_spec">
+                                    <input type="radio" name="createPlanRadio" value="monthly_per_spec" hidden>
+                                    <div class="create-plan-icon">
+                                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
+                                    </div>
+                                    <strong>Per Spec</strong>
+                                    <span class="create-plan-desc">Select specific specs</span>
+                                </label>
+                                <label class="create-plan-card" data-plan="lifetime">
+                                    <input type="radio" name="createPlanRadio" value="lifetime" hidden>
+                                    <div class="create-plan-icon">
+                                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+                                    </div>
+                                    <strong>Lifetime</strong>
+                                    <span class="create-plan-desc">Never expires</span>
+                                </label>
+                                <label class="create-plan-card" data-plan="custom">
+                                    <input type="radio" name="createPlanRadio" value="custom" hidden>
+                                    <div class="create-plan-icon">
+                                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>
+                                    </div>
+                                    <strong>Custom</strong>
+                                    <span class="create-plan-desc">Set custom duration</span>
+                                </label>
+                            </div>
+                            <!-- Hidden select synced by JS -->
+                            <select id="createPlan" class="spec-select" hidden>
                                 <option value="monthly">Monthly</option>
                                 <option value="monthly_per_spec">Monthly Per Spec</option>
                                 <option value="lifetime">Lifetime</option>
                                 <option value="custom">Custom</option>
                             </select>
-                        </label>
-                        <label class="admin-label" id="createMonthsLabel">Months
-                            <input id="createMonths" class="input-box admin-small-input" type="number" min="1" max="36" value="1">
-                        </label>
-                        <label class="admin-label" id="createCustomDurationLabel" style="display:none;">Custom Duration
-                            <div style="display:grid; grid-template-columns: 1fr 1fr; gap: 8px;">
-                                <input id="createDurationValue" class="input-box admin-small-input" type="number" min="1" value="1">
-                                <select id="createDurationUnit" class="spec-select">
-                                    <option value="minutes">Minutes</option>
-                                    <option value="hours">Hours</option>
-                                    <option value="days">Days</option>
-                                    <option value="weeks">Weeks</option>
-                                    <option value="months">Months</option>
-                                    <option value="years">Years</option>
-                                </select>
+                            <div class="create-nav">
+                                <span></span>
+                                <button type="button" class="btn create-next-btn" data-goto="2">
+                                    Next: Details
+                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>
+                                </button>
                             </div>
-                        </label>
-                        <label class="admin-label">Email
-                            <input id="createEmail" class="input-box admin-small-input" type="email" placeholder="customer@email.com">
-                        </label>
-                        <label class="admin-label" style="grid-column: 1 / -1;">Select Specs
-                            <div id="createSpecsContainer" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 8px; margin-top: 8px; padding: 12px; background: rgba(8, 12, 24, 0.75); border: 1px solid rgba(100, 140, 255, 0.12); border-radius: 10px; max-height: 200px; overflow-y: auto;">
-                                <div class="admin-message" style="margin: 0;">Loading specs...</div>
+                        </div>
+
+                        <!-- Step 2: Duration + Email + Specs -->
+                        <div class="create-panel" id="createStep2" hidden>
+                            <p class="create-panel-title">Configure details</p>
+                            <div class="create-details-grid">
+                                <div class="create-field" id="createMonthsLabel">
+                                    <label class="create-field-label">
+                                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+                                        Duration (Months)
+                                    </label>
+                                    <input id="createMonths" class="input-box" type="number" min="1" max="36" value="1">
+                                </div>
+                                <div class="create-field" id="createCustomDurationLabel" style="display:none;">
+                                    <label class="create-field-label">
+                                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+                                        Custom Duration
+                                    </label>
+                                    <div class="create-custom-dur">
+                                        <input id="createDurationValue" class="input-box" type="number" min="1" value="1">
+                                        <select id="createDurationUnit" class="spec-select">
+                                            <option value="minutes">Minutes</option>
+                                            <option value="hours">Hours</option>
+                                            <option value="days">Days</option>
+                                            <option value="weeks">Weeks</option>
+                                            <option value="months">Months</option>
+                                            <option value="years">Years</option>
+                                        </select>
+                                    </div>
+                                </div>
+                                <div class="create-field">
+                                    <label class="create-field-label">
+                                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
+                                        Email (optional)
+                                    </label>
+                                    <input id="createEmail" class="input-box" type="email" placeholder="customer@email.com">
+                                </div>
                             </div>
-                        </label>
+                            <div class="create-specs-section">
+                                <label class="create-field-label">
+                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
+                                    Select Specializations
+                                    <span class="create-specs-count" id="createSpecsCount">0 selected</span>
+                                </label>
+                                <input type="search" class="input-box create-specs-search" id="createSpecsSearch" placeholder="Search specs..." autocomplete="off">
+                                <div class="create-specs-grid" id="createSpecsContainer">
+                                    <div class="admin-message" style="margin:0;">Loading specs...</div>
+                                </div>
+                            </div>
+                            <div class="create-nav">
+                                <button type="button" class="btn-action create-back-btn" data-goto="1">
+                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 18 9 12 15 6"/></svg>
+                                    Back
+                                </button>
+                                <button type="button" class="btn create-next-btn" data-goto="3">
+                                    Next: Review
+                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>
+                                </button>
+                            </div>
+                        </div>
+
+                        <!-- Step 3: Review & Confirm -->
+                        <div class="create-panel" id="createStep3" hidden>
+                            <p class="create-panel-title">Review & Confirm</p>
+                            <div class="create-review" id="createReviewSummary">
+                                <!-- Populated by JS -->
+                            </div>
+                            <div class="create-nav">
+                                <button type="button" class="btn-action create-back-btn" data-goto="2">
+                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 18 9 12 15 6"/></svg>
+                                    Back
+                                </button>
+                                <button id="createLicenseBtn" class="btn create-submit-btn" type="button">
+                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>
+                                    Create License
+                                </button>
+                            </div>
+                            <p id="createLicenseMsg" class="admin-message"></p>
+                        </div>
                     </div>
-                    <button id="createLicenseBtn" class="btn" type="button">Create</button>
-                    <p id="createLicenseMsg" class="admin-message"></p>
+
+
+                    <!-- Configuration -->
+                    <div class="admin-card card card--panel" id="admin-config">
+                        <h3 class="admin-section-title">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--adm-accent)" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>
+                            Configuration
+                        </h3>
+                        <div class="admin-form-grid">
+                            <label class="admin-label">Monthly Price Per Spec (USD)
+                                <input id="configPriceInput" class="input-box admin-small-input" type="number" min="0" step="1">
+                            </label>
+                        </div>
+                        <button id="updateConfigBtn" class="btn" type="button">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 21H5a2 2 0 01-2-2V5a2 2 0 012-2h11l5 5v11a2 2 0 01-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
+                            Save Configuration
+                        </button>
+                        <p id="updateConfigMsg" class="admin-message"></p>
+                    </div>
+
+                    <!-- Orders -->
+                    <div class="admin-card card card--panel" id="admin-orders">
+                        <h3 class="admin-section-title">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--adm-accent)" stroke-width="2"><path d="M6 2L3 6v14a2 2 0 002 2h14a2 2 0 002-2V6l-3-4z"/><line x1="3" y1="6" x2="21" y2="6"/></svg>
+                            Orders Monitor <span class="admin-section-meta" id="ordersCount">0</span>
+                        </h3>
+                        <div class="admin-toolbar">
+                            <input id="ordersSearch" class="input-box admin-small-input" type="search" placeholder="Search order, email, key">
+                            <select id="ordersSavedView" class="spec-select">
+                                <option value="">Saved view: none</option>
+                                <option value="pending_new">Pending newest</option>
+                                <option value="fulfilled_new">Fulfilled newest</option>
+                            </select>
+                            <select id="ordersStatus" class="spec-select">
+                                <option value="">All statuses</option>
+                                <option value="pending">Pending</option>
+                                <option value="fulfilled">Fulfilled</option>
+                            </select>
+                            <select id="ordersSort" class="spec-select">
+                                <option value="createdAt:desc" selected>Sort: Newest</option>
+                                <option value="createdAt:asc">Sort: Oldest</option>
+                                <option value="amountUsd:desc">Sort: Amount (High)</option>
+                                <option value="amountUsd:asc">Sort: Amount (Low)</option>
+                                <option value="status:asc">Sort: Status</option>
+                            </select>
+                            <button id="ordersSelectVisibleBtn" class="btn-action" type="button">Select visible</button>
+                            <button id="refreshOrdersBtn" class="btn-action" type="button">Refresh</button>
+                            <button id="bulkDeleteOrdersBtn" class="btn-action admin-danger" type="button" disabled>Bulk delete</button>
+                            <button id="exportOrdersBtn" class="btn-action" type="button">Export CSV</button>
+                        </div>
+                        <div class="admin-list" id="ordersList" aria-live="polite"></div>
+                        <div class="admin-pager">
+                            <button class="btn-action" type="button" id="ordersPrev">Prev</button>
+                            <span class="admin-pager-text" id="ordersPageText">Page 1</span>
+                            <button class="btn-action" type="button" id="ordersNext">Next</button>
+                            <select class="spec-select admin-page-size" id="ordersPageSize">
+                                <option value="10">10</option>
+                                <option value="25" selected>25</option>
+                                <option value="50">50</option>
+                                <option value="100">100</option>
+                            </select>
+                        </div>
+                    </div>
                 </div>
 
-                <div class="admin-card card card--panel" id="admin-config">
-                    <h3 class="admin-section-title">Application Configuration</h3>
-                    <div class="admin-form-grid">
-                        <label class="admin-label">Monthly Price Per Spec (USD)
-                            <input id="configPriceInput" class="input-box admin-small-input" type="number" min="0" step="1">
-                        </label>
+                <!-- Licenses -->
+                <div class="admin-card card card--panel admin-licenses-card" id="admin-licenses">
+                    <!-- License Header -->
+                    <div class="lic-header">
+                        <div class="lic-header-left">
+                            <h3 class="admin-section-title" style="margin-bottom:0;">
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--adm-accent)" stroke-width="2"><rect x="1" y="4" width="22" height="16" rx="2"/><line x1="1" y1="10" x2="23" y2="10"/></svg>
+                                License Inventory
+                            </h3>
+                            <span class="admin-section-meta" id="licensesCount">0</span>
+                        </div>
+                        <div class="lic-header-right">
+                            <div class="lic-quick-stat">
+                                <span class="lic-quick-dot lic-dot-ok"></span>
+                                <span id="licActiveCount">0</span> Active
+                            </div>
+                            <div class="lic-quick-stat">
+                                <span class="lic-quick-dot lic-dot-warn"></span>
+                                <span id="licExpiringCount">0</span> Expiring
+                            </div>
+                            <div class="lic-quick-stat">
+                                <span class="lic-quick-dot lic-dot-bad"></span>
+                                <span id="licExpiredCount">0</span> Expired
+                            </div>
+                        </div>
                     </div>
-                    <button id="updateConfigBtn" class="btn" type="button">Save Configuration</button>
-                    <p id="updateConfigMsg" class="admin-message"></p>
-                </div>
 
-                <div class="admin-card card card--panel" id="admin-orders">
-                    <h3 class="admin-section-title">Orders Monitor <span class="admin-section-meta" id="ordersCount">0</span></h3>
-                    <div class="admin-toolbar">
-                        <input id="ordersSearch" class="input-box admin-small-input" type="search" placeholder="Search order, email, key">
-                        <select id="ordersSavedView" class="spec-select">
-                            <option value="">Saved view: none</option>
-                            <option value="pending_new">Pending newest</option>
-                            <option value="fulfilled_new">Fulfilled newest</option>
-                        </select>
-                        <select id="ordersStatus" class="spec-select">
-                            <option value="">All statuses</option>
-                            <option value="pending">Pending</option>
-                            <option value="fulfilled">Fulfilled</option>
-                        </select>
-                        <select id="ordersSort" class="spec-select">
-                            <option value="createdAt:desc" selected>Sort: Newest</option>
-                            <option value="createdAt:asc">Sort: Oldest</option>
-                            <option value="amountUsd:desc">Sort: Amount (High)</option>
-                            <option value="amountUsd:asc">Sort: Amount (Low)</option>
-                            <option value="status:asc">Sort: Status</option>
-                        </select>
-                        <button id="ordersSelectVisibleBtn" class="btn-action" type="button">Select visible</button>
-                        <button id="refreshOrdersBtn" class="btn-action" type="button">Refresh</button>
-                        <button id="bulkDeleteOrdersBtn" class="btn-action admin-danger" type="button" disabled>Bulk delete</button>
-                        <button id="exportOrdersBtn" class="btn-action" type="button">Export CSV</button>
+                    <!-- Filter tabs -->
+                    <div class="lic-filter-tabs">
+                        <button class="lic-tab is-active" data-view="" type="button">All</button>
+                        <button class="lic-tab" data-view="expiring_soon" type="button">
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+                            Expiring Soon
+                        </button>
+                        <button class="lic-tab" data-view="active_bound" type="button">
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+                            Active + Bound
+                        </button>
+                        <button class="lic-tab" data-view="disabled_only" type="button">
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/></svg>
+                            Disabled
+                        </button>
                     </div>
-                    <div class="admin-list" id="ordersList" aria-live="polite"></div>
-                    <div class="admin-pager">
-                        <button class="btn-action" type="button" id="ordersPrev">Prev</button>
-                        <span class="admin-pager-text" id="ordersPageText">Page 1</span>
-                        <button class="btn-action" type="button" id="ordersNext">Next</button>
-                        <select class="spec-select admin-page-size" id="ordersPageSize">
-                            <option value="10">10</option>
-                            <option value="25" selected>25</option>
-                            <option value="50">50</option>
-                            <option value="100">100</option>
-                        </select>
-                    </div>
-                </div>
-            </div>
-
-            <div class="admin-card card card--panel" id="admin-licenses">
-                <h3 class="admin-section-title">License Inventory <span class="admin-section-meta" id="licensesCount">0</span></h3>
-                <div class="admin-toolbar">
-                    <input id="licensesSearch" class="input-box admin-small-input" type="search" placeholder="Search key, email, plan, order">
-                    <select id="licensesSavedView" class="spec-select">
+                    <select id="licensesSavedView" class="spec-select" hidden>
                         <option value="">Saved view: none</option>
                         <option value="expiring_soon">Expiring soon</option>
                         <option value="active_bound">Active + bound</option>
                         <option value="disabled_only">Disabled only</option>
                     </select>
-                    <select id="licensesPlan" class="spec-select">
-                        <option value="">All plans</option>
-                        <option value="monthly">Monthly</option>
-                        <option value="monthly_per_spec">Monthly Per Spec</option>
-                        <option value="lifetime">Lifetime</option>
-                        <option value="custom">Custom</option>
-                    </select>
-                    <select id="licensesStatus" class="spec-select">
-                        <option value="">All status</option>
-                        <option value="active">Active</option>
-                        <option value="expired">Expired</option>
-                        <option value="disabled">Disabled</option>
-                        <option value="bound">Bound</option>
-                        <option value="unbound">Unbound</option>
-                    </select>
-                    <select id="licensesSort" class="spec-select">
-                        <option value="createdAt:desc" selected>Sort: Newest</option>
-                        <option value="createdAt:asc">Sort: Oldest</option>
-                        <option value="expiresAt:asc">Sort: Expiring soon</option>
-                        <option value="expiresAt:desc">Sort: Expiring last</option>
-                        <option value="plan:asc">Sort: Plan</option>
-                    </select>
-                    <button id="licensesSelectVisibleBtn" class="btn-action" type="button">Select visible</button>
-                    <button id="refreshLicensesBtn" class="btn-action" type="button">Refresh</button>
-                    <button id="bulkDeleteLicensesBtn" class="btn-action admin-danger" type="button" disabled>Bulk delete</button>
-                    <button id="bulkExtendLicensesBtn" class="btn-action" type="button" disabled>Bulk +1 month</button>
-                    <button id="bulkResetHwidBtn" class="btn-action" type="button" disabled>Bulk reset HWID</button>
-                    <button id="bulkToggleLicensesBtn" class="btn-action" type="button" disabled>Bulk toggle</button>
-                    <button id="exportLicensesBtn" class="btn-action" type="button">Export CSV</button>
-                </div>
-                <div class="admin-list" id="licensesList" aria-live="polite"></div>
-                <div class="admin-pager">
-                    <button class="btn-action" type="button" id="licensesPrev">Prev</button>
-                    <span class="admin-pager-text" id="licensesPageText">Page 1</span>
-                    <button class="btn-action" type="button" id="licensesNext">Next</button>
-                    <select class="spec-select admin-page-size" id="licensesPageSize">
-                        <option value="10">10</option>
-                        <option value="25" selected>25</option>
-                        <option value="50">50</option>
-                        <option value="100">100</option>
-                    </select>
-                </div>
-            </div>
 
-            <div class="admin-card card card--panel" id="admin-audit">
-                <h3 class="admin-section-title">Audit Timeline <span class="admin-section-meta" id="auditCount">0</span></h3>
-                <div class="admin-toolbar admin-toolbar--compact">
-                    <input id="auditLimit" class="input-box admin-small-input" type="number" min="10" max="500" value="100" placeholder="Limit">
-                    <button id="refreshAuditBtn" class="btn-action" type="button">Refresh</button>
-                    <button id="clearAuditBtn" class="btn-action admin-danger" type="button">Clear</button>
-                    <button id="exportAuditBtn" class="btn-action" type="button">Export CSV</button>
+                    <!-- Search + Filters row -->
+                    <div class="lic-controls">
+                        <div class="lic-search-wrap">
+                            <svg class="lic-search-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+                            <input id="licensesSearch" class="input-box lic-search-input" type="search" placeholder="Search key, email, plan, order...">
+                        </div>
+                        <select id="licensesPlan" class="spec-select">
+                            <option value="">All plans</option>
+                            <option value="monthly">Monthly</option>
+                            <option value="monthly_per_spec">Monthly Per Spec</option>
+                            <option value="lifetime">Lifetime</option>
+                            <option value="custom">Custom</option>
+                        </select>
+                        <select id="licensesStatus" class="spec-select">
+                            <option value="">All status</option>
+                            <option value="active">Active</option>
+                            <option value="expired">Expired</option>
+                            <option value="disabled">Disabled</option>
+                            <option value="bound">Bound</option>
+                            <option value="unbound">Unbound</option>
+                        </select>
+                        <select id="licensesSort" class="spec-select">
+                            <option value="createdAt:desc" selected>Sort: Newest</option>
+                            <option value="createdAt:asc">Sort: Oldest</option>
+                            <option value="expiresAt:asc">Expiring soon</option>
+                            <option value="expiresAt:desc">Expiring last</option>
+                            <option value="plan:asc">Sort: Plan</option>
+                        </select>
+                    </div>
+
+                    <!-- Action buttons -->
+                    <div class="lic-actions-bar">
+                        <div class="lic-actions-left">
+                            <button id="licensesSelectVisibleBtn" class="btn-action" type="button">
+                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg>
+                                Select visible
+                            </button>
+                            <button id="refreshLicensesBtn" class="btn-action" type="button">
+                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15A9 9 0 115.64 5.64L1 10"/></svg>
+                                Refresh
+                            </button>
+                            <button id="exportLicensesBtn" class="btn-action" type="button">
+                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                                Export CSV
+                            </button>
+                        </div>
+                        <div class="lic-actions-right">
+                            <button id="bulkExtendLicensesBtn" class="btn-action" type="button" disabled>
+                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+                                +1 Month
+                            </button>
+                            <button id="bulkResetHwidBtn" class="btn-action" type="button" disabled>
+                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 102.13-9.36L1 10"/></svg>
+                                Reset HWID
+                            </button>
+                            <button id="bulkToggleLicensesBtn" class="btn-action" type="button" disabled>
+                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="1" y="5" width="22" height="14" rx="7"/><circle cx="16" cy="12" r="3"/></svg>
+                                Toggle
+                            </button>
+                            <button id="bulkDeleteLicensesBtn" class="btn-action admin-danger" type="button" disabled>
+                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg>
+                                Delete
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- License list -->
+                    <div class="admin-list" id="licensesList" aria-live="polite"></div>
+
+                    <!-- Pagination -->
+                    <div class="lic-pager">
+                        <div class="lic-pager-info" id="licPagerInfo">Showing 0 licenses</div>
+                        <div class="lic-pager-controls">
+                            <button class="btn-action" type="button" id="licensesPrev">
+                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 18 9 12 15 6"/></svg>
+                                Prev
+                            </button>
+                            <span class="admin-pager-text" id="licensesPageText">Page 1</span>
+                            <button class="btn-action" type="button" id="licensesNext">
+                                Next
+                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>
+                            </button>
+                            <select class="spec-select admin-page-size" id="licensesPageSize">
+                                <option value="10">10</option>
+                                <option value="25" selected>25</option>
+                                <option value="50">50</option>
+                                <option value="100">100</option>
+                            </select>
+                        </div>
+                    </div>
                 </div>
-                <div class="admin-table-wrap">
-                    <table class="admin-table" id="auditTable">
-                        <thead>
-                            <tr>
-                                <th>Time</th>
-                                <th>Actor</th>
-                                <th>Action</th>
-                                <th>Details</th>
-                            </tr>
-                        </thead>
-                        <tbody></tbody>
-                    </table>
+
+                <!-- Live Activity Feed -->
+                <div class="admin-card card card--panel" id="admin-activity">
+                    <h3 class="admin-section-title">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--adm-accent)" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+                        Live Activity
+                        <span class="admin-live-dot" id="adminLiveDot"></span>
+                    </h3>
+                    <div class="admin-activity-feed" id="adminActivityFeed">
+                        <div class="admin-empty">Waiting for activity...</div>
+                    </div>
                 </div>
-            </div>
             </div>
         </section>
     </main>
 
+    <!-- Confirm modal -->
     <div class="admin-confirm-modal" id="adminConfirmModal" hidden>
         <div class="admin-confirm-box card card--panel">
             <h3 id="adminConfirmTitle">Confirm action</h3>
@@ -260,6 +531,9 @@
             </div>
         </div>
     </div>
+
+    <!-- Toast container -->
+    <div class="admin-toast-container" id="adminToastContainer"></div>
 
     <script src="js/admin.js"></script>
 </body>

@@ -3,6 +3,8 @@ const cors = require('cors');
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
+const http = require('http');
+const { WebSocketServer } = require('ws');
 
 require('dotenv').config();
 
@@ -160,12 +162,15 @@ function adminActor(req) {
 }
 
 function auditAdmin(req, action, details) {
-    appendAudit({
+    const entry = {
         actor: adminActor(req),
         action,
         details: details || {},
         ip: req.ip || '',
-    }).catch(console.error);
+        at: new Date().toISOString(),
+    };
+    appendAudit(entry).catch(console.error);
+    wsBroadcast(entry);
 }
 
 function adminApiUnavailable() {
@@ -290,6 +295,94 @@ app.get('/api/checkout/config', (req, res) => {
         invoiceEnabled: !!(process.env.NOWPAYMENTS_API_KEY && base),
         publicBaseUrl: base,
     });
+});
+
+// ── API: Plan checkout (monthly / 3-month — all specs) ──
+app.post('/api/checkout/plan', async (req, res) => {
+    const { plan, email, months, amountUsd } = req.body || {};
+    const em = (email && String(email).trim()) || '';
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(em)) {
+        return res.status(400).json({ error: 'Enter a valid email for license delivery.' });
+    }
+
+    const planConfig = {
+        monthly:  { label: 'Monthly — All Specs', amount: 30, months: 1 },
+        '3month': { label: '3-Month — All Specs', amount: 75, months: 3 },
+    };
+    const cfg = planConfig[plan];
+    if (!cfg) {
+        return res.status(400).json({ error: 'Invalid plan type.' });
+    }
+
+    const finalAmount = Number(cfg.amount.toFixed(2));
+    const orderId = `MCA-${Date.now()}-${crypto.randomBytes(4).toString('hex').toUpperCase()}`;
+    const base = publicBaseUrl();
+    const apiKey = process.env.NOWPAYMENTS_API_KEY;
+
+    await upsertPendingOrder({
+        kind: plan === '3month' ? '3month_all' : 'monthly_all',
+        orderId,
+        specIds: [],
+        specLabels: [],
+        selectedSummary: cfg.label,
+        amountUsd: finalAmount,
+        currency: 'USD',
+        email: em.slice(0, 200),
+        createdAt: new Date().toISOString(),
+        status: 'pending',
+    });
+
+    if (!apiKey || !base) {
+        return res.json({
+            mode: 'manual',
+            orderId,
+            amountUsd: finalAmount,
+            currency: 'USD',
+            message: 'Set NOWPAYMENTS_API_KEY and PUBLIC_BASE_URL to enable automatic checkout.',
+        });
+    }
+
+    const ipnUrl = `${base}/api/webhook/nowpayments`;
+    const successUrl = `${base}/payment-success.html?order=${encodeURIComponent(orderId)}`;
+    const cancelUrl = `${base}/index.html#pricing`;
+
+    const invoiceBody = {
+        price_amount: finalAmount,
+        price_currency: 'usd',
+        order_id: orderId,
+        order_description: `Max Combat Assistant — ${cfg.label}`,
+        ipn_callback_url: ipnUrl,
+        success_url: successUrl,
+        cancel_url: cancelUrl,
+    };
+
+    const payCurrency = (process.env.NOWPAYMENTS_PAY_CURRENCY || '').trim();
+    if (payCurrency) invoiceBody.pay_currency = payCurrency.toLowerCase();
+
+    try {
+        const inv = await nowpaymentsCreateInvoice(invoiceBody);
+        const invoiceUrl = inv.invoice_url || inv.invoiceUrl;
+        const npId = inv.id != null ? String(inv.id) : null;
+
+        await upsertPendingOrder({ orderId, npInvoiceId: npId, invoiceUrl });
+
+        return res.json({
+            mode: 'invoice',
+            orderId,
+            invoiceUrl,
+            amountUsd: finalAmount,
+            currency: 'USD',
+        });
+    } catch (e) {
+        console.error('NOWPayments invoice error:', e.message || e);
+        return res.status(502).json({
+            error: 'Payment provider error',
+            detail: e.message || String(e),
+            mode: 'manual',
+            orderId,
+            amountUsd: finalAmount,
+        });
+    }
 });
 
 // ── API: Legacy draft (manual JSON flow) ──
@@ -1021,9 +1114,28 @@ const webhookParser = express.json({
 app.post('/api/webhook/nowpayments', webhookParser, handleNowpaymentsIpn);
 app.post('/api/webhook/usdt', webhookParser, handleNowpaymentsIpn);
 
+// ── WebSocket Server ──
+const server = http.createServer(app);
+const wss = new WebSocketServer({ server, path: '/ws/admin' });
+
+const wsClients = new Set();
+wss.on('connection', (ws) => {
+    wsClients.add(ws);
+    ws.on('close', () => wsClients.delete(ws));
+    ws.on('error', () => wsClients.delete(ws));
+});
+
+function wsBroadcast(data) {
+    const msg = JSON.stringify(data);
+    for (const ws of wsClients) {
+        try { ws.send(msg); } catch (_) { /* ignore */ }
+    }
+}
+
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
+server.listen(PORT, () => {
     console.log(`Server running on http://localhost:${PORT}`);
+    console.log(`WebSocket admin feed: ws://localhost:${PORT}/ws/admin`);
     const base = publicBaseUrl();
     if (process.env.NOWPAYMENTS_API_KEY && base) {
         console.log('NOWPayments invoice checkout: enabled');
