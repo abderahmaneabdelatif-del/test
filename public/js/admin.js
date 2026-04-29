@@ -9,6 +9,8 @@ function esc(v) {
 document.addEventListener('DOMContentLoaded', () => {
     const authCard = document.getElementById('adminAuthCard');
     const panel = document.getElementById('adminPanel');
+    const topbar = document.getElementById('adminTopbar');
+    const hero = document.getElementById('adminHero');
     const tokenInput = document.getElementById('adminTokenInput');
     const loginBtn = document.getElementById('adminLoginBtn');
     const authMsg = document.getElementById('adminAuthMsg');
@@ -21,6 +23,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const createPlan = document.getElementById('createPlan');
     const createMonths = document.getElementById('createMonths');
+    const createMonthsLabel = document.getElementById('createMonthsLabel');
+    const createCustomDurationLabel = document.getElementById('createCustomDurationLabel');
+    const createDurationValue = document.getElementById('createDurationValue');
+    const createDurationUnit = document.getElementById('createDurationUnit');
     const createEmail = document.getElementById('createEmail');
     const createSpecsContainer = document.getElementById('createSpecsContainer');
     const createBtn = document.getElementById('createLicenseBtn');
@@ -57,6 +63,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const licensesPageSize = document.getElementById('licensesPageSize');
     const licensesSort = document.getElementById('licensesSort');
     const refreshAuditBtn = document.getElementById('refreshAuditBtn');
+    const clearAuditBtn = document.getElementById('clearAuditBtn');
     const auditLimit = document.getElementById('auditLimit');
     const auditTbody = document.querySelector('#auditTable tbody');
     const exportAuditBtn = document.getElementById('exportAuditBtn');
@@ -67,17 +74,38 @@ document.addEventListener('DOMContentLoaded', () => {
     const globalSearch = document.getElementById('adminGlobalSearch');
     const quickRefreshBtn = document.getElementById('adminQuickRefresh');
     const autoRefreshToggle = document.getElementById('adminAutoRefresh');
+    const ordersSavedView = document.getElementById('ordersSavedView');
+    const licensesSavedView = document.getElementById('licensesSavedView');
+    const bulkExtendLicensesBtn = document.getElementById('bulkExtendLicensesBtn');
+    const bulkResetHwidBtn = document.getElementById('bulkResetHwidBtn');
+    const bulkToggleLicensesBtn = document.getElementById('bulkToggleLicensesBtn');
+    const sessionExpiryEl = document.getElementById('adminSessionExpiry');
+    const confirmModal = document.getElementById('adminConfirmModal');
+    const confirmTitle = document.getElementById('adminConfirmTitle');
+    const confirmText = document.getElementById('adminConfirmText');
+    const confirmInput = document.getElementById('adminConfirmInput');
+    const confirmKeyword = document.getElementById('adminConfirmKeyword');
+    const confirmCancel = document.getElementById('adminConfirmCancel');
+    const confirmOk = document.getElementById('adminConfirmOk');
 
     let token = localStorage.getItem('adminToken') || '';
     let currentRole = 'support';
     let currentName = 'admin';
     let autoRefreshTimer = null;
+    let idleTimer = null;
+    let sessionTicker = null;
+    let sessionExpiresAt = 0;
+    let confirmResolve = null;
     const specsMap = new Map(); // id -> label
 
     const state = {
         orders: { items: [], page: 1, pageSize: 25, sortKey: 'createdAt', sortDir: 'desc' },
         licenses: { items: [], page: 1, pageSize: 25, sortKey: 'createdAt', sortDir: 'desc' },
         audit: { items: [] },
+        savedViews: {
+            orders: localStorage.getItem('adminSavedViewOrders') || '',
+            licenses: localStorage.getItem('adminSavedViewLicenses') || '',
+        },
     };
     const selectedOrders = new Set();
     const selectedLicenses = new Set();
@@ -134,6 +162,22 @@ document.addEventListener('DOMContentLoaded', () => {
         return d.toLocaleString();
     }
 
+    function escRegExp(s) {
+        return String(s).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    }
+
+    function highlight(text, query) {
+        const raw = String(text == null ? '' : text);
+        const q = String(query || '').trim();
+        if (!q) return esc(raw);
+        try {
+            const re = new RegExp(`(${escRegExp(q)})`, 'ig');
+            return esc(raw).replace(re, '<mark class="admin-hl">$1</mark>');
+        } catch {
+            return esc(raw);
+        }
+    }
+
     function setAuthMessage(msg, isError = false) {
         authMsg.textContent = msg || '';
         authMsg.classList.toggle('is-error', !!isError);
@@ -142,6 +186,20 @@ document.addEventListener('DOMContentLoaded', () => {
     function setCreateMessage(msg, isError = false) {
         createMsg.textContent = msg || '';
         createMsg.classList.toggle('is-error', !!isError);
+    }
+
+    function syncCreatePlanInputs() {
+        if (!createPlan) return;
+        const plan = String(createPlan.value || '').toLowerCase();
+        const isCustom = plan === 'custom';
+        const isLifetime = plan === 'lifetime';
+
+        if (createMonthsLabel) createMonthsLabel.style.display = isCustom ? 'none' : '';
+        if (createMonths) createMonths.disabled = isCustom || isLifetime;
+
+        if (createCustomDurationLabel) createCustomDurationLabel.style.display = isCustom ? '' : 'none';
+        if (createDurationValue) createDurationValue.disabled = !isCustom;
+        if (createDurationUnit) createDurationUnit.disabled = !isCustom;
     }
 
     function statusBadge(status) {
@@ -165,6 +223,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!sessionLine) return;
         sessionLine.innerHTML = `Signed in as <strong>${esc(currentName)}</strong> (${esc(currentRole)})`;
         if (createBtn) createBtn.disabled = !canWrite();
+        if (clearAuditBtn) clearAuditBtn.disabled = !canWrite();
     }
 
     function markRefreshedNow() {
@@ -194,14 +253,102 @@ document.addEventListener('DOMContentLoaded', () => {
     function updateBulkButtons() {
         if (bulkDeleteOrdersBtn) bulkDeleteOrdersBtn.disabled = !canWrite() || selectedOrders.size === 0;
         if (bulkDeleteLicensesBtn) bulkDeleteLicensesBtn.disabled = !canWrite() || selectedLicenses.size === 0;
+        if (bulkExtendLicensesBtn) bulkExtendLicensesBtn.disabled = !canWrite() || selectedLicenses.size === 0;
+        if (bulkResetHwidBtn) bulkResetHwidBtn.disabled = !canWrite() || selectedLicenses.size === 0;
+        if (bulkToggleLicensesBtn) bulkToggleLicensesBtn.disabled = !canWrite() || selectedLicenses.size === 0;
+    }
+
+    function applySavedViews() {
+        if (ordersSavedView && state.savedViews.orders) ordersSavedView.value = state.savedViews.orders;
+        if (licensesSavedView && state.savedViews.licenses) licensesSavedView.value = state.savedViews.licenses;
+    }
+
+    function applyOrderSavedView(view) {
+        if (view === 'pending_new') {
+            if (ordersStatus) ordersStatus.value = 'pending';
+            if (ordersSort) ordersSort.value = 'createdAt:desc';
+        } else if (view === 'fulfilled_new') {
+            if (ordersStatus) ordersStatus.value = 'fulfilled';
+            if (ordersSort) ordersSort.value = 'createdAt:desc';
+        }
+    }
+
+    function applyLicenseSavedView(view) {
+        if (view === 'active_bound') {
+            if (licensesStatus) licensesStatus.value = 'bound';
+        } else if (view === 'disabled_only') {
+            if (licensesStatus) licensesStatus.value = 'disabled';
+        } else if (view === 'expiring_soon') {
+            if (licensesStatus) licensesStatus.value = 'active';
+            if (licensesSort) licensesSort.value = 'expiresAt:asc';
+        }
+    }
+
+    function startSessionTimers() {
+        const SESSION_MS = 30 * 60 * 1000;
+        const reset = () => {
+            sessionExpiresAt = Date.now() + SESSION_MS;
+            if (idleTimer) clearTimeout(idleTimer);
+            idleTimer = setTimeout(() => {
+                token = '';
+                localStorage.removeItem('adminToken');
+                setAuthenticated(false);
+                setAuthMessage('Session expired due to inactivity.');
+            }, SESSION_MS);
+        };
+
+        const updateTicker = () => {
+            if (!sessionExpiryEl || !sessionExpiresAt) return;
+            const diff = Math.max(0, sessionExpiresAt - Date.now());
+            const mins = Math.floor(diff / 60000);
+            const secs = Math.floor((diff % 60000) / 1000);
+            sessionExpiryEl.textContent = `${mins}m ${String(secs).padStart(2, '0')}s`;
+        };
+
+        ['mousemove', 'keydown', 'click'].forEach((ev) => document.addEventListener(ev, reset, { passive: true }));
+        reset();
+        if (sessionTicker) clearInterval(sessionTicker);
+        sessionTicker = setInterval(updateTicker, 1000);
+        updateTicker();
+    }
+
+    function stopSessionTimers() {
+        if (idleTimer) clearTimeout(idleTimer);
+        idleTimer = null;
+        if (sessionTicker) clearInterval(sessionTicker);
+        sessionTicker = null;
+        if (sessionExpiryEl) sessionExpiryEl.textContent = '-';
+    }
+
+    function askConfirm({ title, text, keyword = 'CONFIRM' }) {
+        return new Promise((resolve) => {
+            if (!confirmModal || !confirmInput || !confirmOk || !confirmCancel || !confirmTitle || !confirmText || !confirmKeyword) {
+                resolve(window.confirm(text || 'Are you sure?'));
+                return;
+            }
+            confirmResolve = resolve;
+            confirmTitle.textContent = title || 'Confirm action';
+            confirmText.textContent = text || 'Please confirm action';
+            confirmKeyword.textContent = keyword;
+            confirmInput.value = '';
+            confirmOk.disabled = true;
+            confirmModal.hidden = false;
+            confirmInput.focus();
+        });
     }
 
     async function loadOverview() {
         const stats = await adminFetch('/api/admin/overview');
+        const soon = (state.licenses.items || []).filter((l) => {
+            if (!l.active || l.plan === 'lifetime') return false;
+            const ms = new Date(l.expiresAt).getTime() - Date.now();
+            return ms > 0 && ms <= 3 * 24 * 60 * 60 * 1000;
+        }).length;
         const cards = [
             ['Total Licenses', stats.totalLicenses],
             ['Active', stats.activeLicenses],
             ['Expired', stats.expiredLicenses],
+            ['Expiring < 3 days', soon],
             ['Per Spec', stats.monthlyPerSpecLicenses],
             ['Pending Orders', stats.pendingOrders],
             ['Fulfilled Orders', stats.fulfilledOrders],
@@ -225,6 +372,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function renderOrders() {
         const { items, page, pageSize, sortKey, sortDir } = state.orders;
+        const q = String(ordersSearch?.value || '').trim();
         const sorted = [...items].sort((a, b) =>
             compare(getOrderSortValue(a, sortKey), getOrderSortValue(b, sortKey), sortDir)
         );
@@ -275,13 +423,15 @@ document.addEventListener('DOMContentLoaded', () => {
                         : '-';
                 const currencyText = o.currency ? ` ${esc(o.currency)}` : '';
                 const email = o.email ? esc(o.email) : '-';
-                const license = o.licenseKey ? `<code>${esc(o.licenseKey)}</code>` : '-';
                 const checked = selectedOrders.has(String(o.orderId || '')) ? 'checked' : '';
+                const orderIdSafe = String(o.orderId || '-');
+                const emailSafe = email;
+                const licenseSafe = o.licenseKey ? o.licenseKey : '-';
 
                 return `<details class="admin-item" data-order="${esc(o.orderId || '')}">
                     <summary class="admin-item-summary">
                         <div class="admin-item-left">
-                            <div class="admin-item-title"><code>${esc(o.orderId || '-')}</code></div>
+                            <div class="admin-item-title"><code>${highlight(orderIdSafe, q)}</code></div>
                             <div class="admin-item-sub">${esc(fmtDate(o.createdAt))} · ${amountText}${currencyText}</div>
                         </div>
                         <div class="admin-item-right">
@@ -296,11 +446,11 @@ document.addEventListener('DOMContentLoaded', () => {
                             </div>
                             <div class="admin-item-field">
                                 <div class="admin-item-label">Email</div>
-                                <div class="admin-item-value"><span class="admin-truncate" title="${esc(email)}">${email}</span></div>
+                                <div class="admin-item-value"><span class="admin-truncate" title="${esc(emailSafe)}">${highlight(emailSafe, q)}</span></div>
                             </div>
                             <div class="admin-item-field">
                                 <div class="admin-item-label">License</div>
-                                <div class="admin-item-value">${license}</div>
+                                <div class="admin-item-value">${o.licenseKey ? `<code>${highlight(licenseSafe, q)}</code>` : '-'}</div>
                             </div>
                             <div class="admin-item-field admin-item-field--actions">
                                 <div class="admin-item-label">Actions</div>
@@ -344,7 +494,16 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function renderLicenses() {
         const { items, page, pageSize, sortKey, sortDir } = state.licenses;
-        const sorted = [...items].sort((a, b) =>
+        const q = String(licensesSearch?.value || '').trim();
+        let filtered = [...items];
+        if (state.savedViews.licenses === 'expiring_soon') {
+            filtered = filtered.filter((l) => {
+                if (!l.active || l.plan === 'lifetime') return false;
+                const ms = new Date(l.expiresAt).getTime() - Date.now();
+                return ms > 0 && ms <= 7 * 24 * 60 * 60 * 1000;
+            });
+        }
+        const sorted = filtered.sort((a, b) =>
             compare(getLicenseSortValue(a, sortKey), getLicenseSortValue(b, sortKey), sortDir)
         );
         const totalPages = Math.max(1, Math.ceil(sorted.length / pageSize));
@@ -380,11 +539,16 @@ document.addEventListener('DOMContentLoaded', () => {
                 const exp = l.plan === 'lifetime' ? 'Never' : fmtDate(l.expiresAt);
                 const status = licenseStatusText(l);
                 const checked = selectedLicenses.has(String(l.key || '')) ? 'checked' : '';
+                const history = (state.audit.items || [])
+                    .filter((a) => JSON.stringify(a.details || {}).toUpperCase().includes(String(l.key || '').toUpperCase()))
+                    .slice(0, 4)
+                    .map((a) => `<div class="admin-item-sub">• ${esc(a.action || '')} · ${esc(fmtDate(a.at))}</div>`)
+                    .join('');
                 return `<details class="admin-item" data-key="${esc(l.key)}">
                     <summary class="admin-item-summary">
                         <div class="admin-item-left">
-                            <div class="admin-item-title"><code>${esc(l.key)}</code></div>
-                            <div class="admin-item-sub">${esc(l.plan || '-') } · Expires: ${esc(exp)}</div>
+                            <div class="admin-item-title"><code>${highlight(l.key, q)}</code></div>
+                            <div class="admin-item-sub">${highlight(l.plan || '-', q)} · Expires: ${highlight(exp, q)}</div>
                         </div>
                         <div class="admin-item-right">
                             ${statusBadge(status)}
@@ -394,11 +558,15 @@ document.addEventListener('DOMContentLoaded', () => {
                         <div class="admin-item-grid">
                             <div class="admin-item-field">
                                 <div class="admin-item-label">Email</div>
-                                <div class="admin-item-value"><span class="admin-truncate" title="${esc(email)}">${email}</span></div>
+                                <div class="admin-item-value"><span class="admin-truncate" title="${esc(email)}">${highlight(email, q)}</span></div>
                             </div>
                             <div class="admin-item-field">
                                 <div class="admin-item-label">Specs</div>
                                 <div class="admin-item-value">${specCell}</div>
+                            </div>
+                            <div class="admin-item-field">
+                                <div class="admin-item-label">Timeline</div>
+                                <div class="admin-item-value">${history || '<span class="admin-truncate">No events</span>'}</div>
                             </div>
                             <div class="admin-item-field admin-item-field--actions">
                                 <div class="admin-item-label">Actions</div>
@@ -496,7 +664,8 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     async function refreshAll() {
-        await Promise.all([loadOverview(), loadOrders(), loadLicenses(), loadAudit(), loadConfig()]);
+        await Promise.all([loadOrders(), loadLicenses(), loadAudit(), loadConfig()]);
+        await loadOverview();
         markRefreshedNow();
     }
 
@@ -533,6 +702,10 @@ document.addEventListener('DOMContentLoaded', () => {
     function setAuthenticated(on) {
         panel.hidden = !on;
         authCard.hidden = !!on;
+        if (topbar) topbar.hidden = !on;
+        if (hero) hero.hidden = !on;
+        if (on) startSessionTimers();
+        else stopSessionTimers();
     }
 
     async function tryLogin() {
@@ -549,6 +722,9 @@ document.addEventListener('DOMContentLoaded', () => {
             updateRoleUi();
             setAuthenticated(true);
             setAuthMessage('');
+            applySavedViews();
+            applyOrderSavedView(state.savedViews.orders);
+            applyLicenseSavedView(state.savedViews.licenses);
             await refreshAll();
         } catch (e) {
             setAuthenticated(false);
@@ -579,6 +755,24 @@ document.addEventListener('DOMContentLoaded', () => {
         setAuthMessage('Logged out.');
     });
 
+    if (confirmInput && confirmOk && confirmCancel && confirmModal) {
+        const syncConfirmState = () => {
+            const keyword = String(confirmKeyword?.textContent || 'CONFIRM').trim();
+            confirmOk.disabled = String(confirmInput.value || '').trim().toUpperCase() !== keyword.toUpperCase();
+        };
+        confirmInput.addEventListener('input', syncConfirmState);
+        confirmCancel.addEventListener('click', () => {
+            confirmModal.hidden = true;
+            if (confirmResolve) confirmResolve(false);
+            confirmResolve = null;
+        });
+        confirmOk.addEventListener('click', () => {
+            confirmModal.hidden = true;
+            if (confirmResolve) confirmResolve(true);
+            confirmResolve = null;
+        });
+    }
+
     createBtn.addEventListener('click', async () => {
         createBtn.disabled = true;
         setCreateMessage('');
@@ -590,6 +784,10 @@ document.addEventListener('DOMContentLoaded', () => {
                 email: (createEmail.value || '').trim() || null,
                 specs: Array.from(document.querySelectorAll('.create-spec-cb:checked')).map(cb => cb.value),
             };
+            if (plan === 'custom') {
+                payload.durationValue = Number(createDurationValue?.value || 1);
+                payload.durationUnit = String(createDurationUnit?.value || 'minutes');
+            }
             const data = await adminFetch('/api/admin/licenses/create', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -697,10 +895,14 @@ document.addEventListener('DOMContentLoaded', () => {
     if (bulkDeleteOrdersBtn) {
         bulkDeleteOrdersBtn.addEventListener('click', () => {
             if (!canWrite() || selectedOrders.size === 0) return;
-            const ok = confirm(`Bulk delete ${selectedOrders.size} order(s)? This cannot be undone.`);
-            if (!ok) return;
-            bulkDeleteOrdersBtn.disabled = true;
-            adminFetch('/api/admin/orders/bulk-delete', {
+            askConfirm({
+                title: 'Bulk delete orders',
+                text: `Delete ${selectedOrders.size} order(s)? This cannot be undone.`,
+                keyword: 'DELETE',
+            }).then((ok) => {
+                if (!ok) return;
+                bulkDeleteOrdersBtn.disabled = true;
+                return adminFetch('/api/admin/orders/bulk-delete', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ orderIds: [...selectedOrders] }),
@@ -713,6 +915,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 .finally(() => {
                     updateBulkButtons();
                 });
+            });
         });
     }
     refreshLicensesBtn.addEventListener('click', () => {
@@ -782,10 +985,14 @@ document.addEventListener('DOMContentLoaded', () => {
     if (bulkDeleteLicensesBtn) {
         bulkDeleteLicensesBtn.addEventListener('click', () => {
             if (!canWrite() || selectedLicenses.size === 0) return;
-            const ok = confirm(`Bulk delete ${selectedLicenses.size} license(s)? This cannot be undone.`);
-            if (!ok) return;
-            bulkDeleteLicensesBtn.disabled = true;
-            adminFetch('/api/admin/licenses/bulk-delete', {
+            askConfirm({
+                title: 'Bulk delete licenses',
+                text: `Delete ${selectedLicenses.size} license(s)? This cannot be undone.`,
+                keyword: 'DELETE',
+            }).then((ok) => {
+                if (!ok) return;
+                bulkDeleteLicensesBtn.disabled = true;
+                return adminFetch('/api/admin/licenses/bulk-delete', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ keys: [...selectedLicenses] }),
@@ -798,11 +1005,70 @@ document.addEventListener('DOMContentLoaded', () => {
                 .finally(() => {
                     updateBulkButtons();
                 });
+            });
+        });
+    }
+
+    if (bulkExtendLicensesBtn) {
+        bulkExtendLicensesBtn.addEventListener('click', async () => {
+            if (!canWrite() || selectedLicenses.size === 0) return;
+            const ok = await askConfirm({ title: 'Bulk extend', text: `Extend ${selectedLicenses.size} license(s) by 1 month?`, keyword: 'EXTEND' });
+            if (!ok) return;
+            for (const key of selectedLicenses) {
+                await adminFetch(`/api/admin/licenses/${encodeURIComponent(key)}/extend`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ months: 1 }),
+                });
+            }
+            await refreshAll();
+        });
+    }
+    if (bulkResetHwidBtn) {
+        bulkResetHwidBtn.addEventListener('click', async () => {
+            if (!canWrite() || selectedLicenses.size === 0) return;
+            const ok = await askConfirm({ title: 'Bulk reset HWID', text: `Reset HWID for ${selectedLicenses.size} license(s)?`, keyword: 'RESET' });
+            if (!ok) return;
+            for (const key of selectedLicenses) {
+                await adminFetch(`/api/admin/licenses/${encodeURIComponent(key)}/reset-hwid`, { method: 'POST' });
+            }
+            await refreshAll();
+        });
+    }
+    if (bulkToggleLicensesBtn) {
+        bulkToggleLicensesBtn.addEventListener('click', async () => {
+            if (!canWrite() || selectedLicenses.size === 0) return;
+            const ok = await askConfirm({ title: 'Bulk toggle', text: `Toggle active state for ${selectedLicenses.size} license(s)?`, keyword: 'TOGGLE' });
+            if (!ok) return;
+            for (const key of selectedLicenses) {
+                await adminFetch(`/api/admin/licenses/${encodeURIComponent(key)}/toggle-active`, { method: 'POST' });
+            }
+            await refreshAll();
         });
     }
     refreshAuditBtn.addEventListener('click', () => {
         loadAudit().catch((e) => alert(e.message || 'Cannot load audit'));
     });
+    if (clearAuditBtn) {
+        clearAuditBtn.addEventListener('click', async () => {
+            if (!canWrite()) return;
+            const ok = await askConfirm({
+                title: 'Clear audit log',
+                text: 'Delete ALL audit entries? This cannot be undone.',
+                keyword: 'CLEAR',
+            });
+            if (!ok) return;
+            clearAuditBtn.disabled = true;
+            try {
+                await adminFetch('/api/admin/audit/clear', { method: 'POST' });
+                await loadAudit();
+            } catch (e) {
+                alert(e.message || 'Failed to clear audit log');
+            } finally {
+                clearAuditBtn.disabled = !canWrite();
+            }
+        });
+    }
     if (exportAuditBtn) {
         exportAuditBtn.addEventListener('click', () => {
             const rows = [
@@ -833,6 +1099,22 @@ document.addEventListener('DOMContentLoaded', () => {
     if (autoRefreshToggle) {
         autoRefreshToggle.addEventListener('change', () => {
             setAutoRefresh(!!autoRefreshToggle.checked);
+        });
+    }
+    if (ordersSavedView) {
+        ordersSavedView.addEventListener('change', () => {
+            state.savedViews.orders = ordersSavedView.value || '';
+            localStorage.setItem('adminSavedViewOrders', state.savedViews.orders);
+            applyOrderSavedView(state.savedViews.orders);
+            refreshAll().catch(() => {});
+        });
+    }
+    if (licensesSavedView) {
+        licensesSavedView.addEventListener('change', () => {
+            state.savedViews.licenses = licensesSavedView.value || '';
+            localStorage.setItem('adminSavedViewLicenses', state.savedViews.licenses);
+            applyLicenseSavedView(state.savedViews.licenses);
+            refreshAll().catch(() => {});
         });
     }
     ordersSearch.addEventListener('input', () => {
@@ -889,15 +1171,20 @@ document.addEventListener('DOMContentLoaded', () => {
         const orderId = card.getAttribute('data-order');
         if (!orderId) return;
         if (!canWrite()) return;
-        const ok = confirm(`Delete order ${orderId}? This cannot be undone.`);
-        if (!ok) return;
-        btn.disabled = true;
-        adminFetch(`/api/admin/orders/${encodeURIComponent(orderId)}/delete`, { method: 'POST' })
-            .then(refreshAll)
-            .catch((err) => alert(err.message || 'Delete failed'))
-            .finally(() => {
-                btn.disabled = false;
-            });
+        askConfirm({
+            title: 'Delete order',
+            text: `Delete order ${orderId}? This cannot be undone.`,
+            keyword: 'DELETE',
+        }).then((ok) => {
+            if (!ok) return;
+            btn.disabled = true;
+            return adminFetch(`/api/admin/orders/${encodeURIComponent(orderId)}/delete`, { method: 'POST' })
+                .then(refreshAll)
+                .catch((err) => alert(err.message || 'Delete failed'))
+                .finally(() => {
+                    btn.disabled = false;
+                });
+        });
     });
 
     licensesList.addEventListener('click', (e) => {
@@ -917,17 +1204,26 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!card) return;
         const key = card.getAttribute('data-key');
         const act = btn.getAttribute('data-act');
-        if (act === 'delete') {
-            const ok = confirm(`Delete license ${key}? This cannot be undone.`);
-            if (!ok) return;
-        }
-        btn.disabled = true;
-        runLicenseAction(key, act)
-            .then(refreshAll)
-            .catch((err) => alert(err.message || 'Action failed'))
-            .finally(() => {
+        const proceed = async () => {
+            btn.disabled = true;
+            try {
+                await runLicenseAction(key, act);
+                await refreshAll();
+            } catch (err) {
+                alert(err.message || 'Action failed');
+            } finally {
                 btn.disabled = false;
-            });
+            }
+        };
+        if (act === 'delete') {
+            askConfirm({
+                title: 'Delete license',
+                text: `Delete license ${key}? This cannot be undone.`,
+                keyword: 'DELETE',
+            }).then((ok) => { if (ok) proceed(); });
+            return;
+        }
+        proceed();
     });
 
     if (token) {
@@ -938,6 +1234,11 @@ document.addEventListener('DOMContentLoaded', () => {
         setAuthenticated(false);
         updateBulkButtons();
     }
+
+    if (createPlan) {
+        createPlan.addEventListener('change', syncCreatePlanInputs);
+    }
+    syncCreatePlanInputs();
 
     initSectionNavigation();
 

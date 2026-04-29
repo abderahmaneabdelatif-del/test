@@ -118,6 +118,7 @@ const {
     deletePendingOrder, 
     appendAudit, 
     readAudit,
+    clearAudit,
     getConfig,
     saveConfig
 } = require('./database');
@@ -627,6 +628,8 @@ app.post('/api/admin/licenses/create', requireAdmin('owner'), async (req, res) =
     const {
         plan = 'monthly',
         months = 1,
+        durationValue = 1,
+        durationUnit = 'minutes',
         specs = [],
         email = null,
         active = true,
@@ -640,7 +643,7 @@ app.post('/api/admin/licenses/create', requireAdmin('owner'), async (req, res) =
         key = generateLicenseKey();
     }
 
-    const normalizedPlan = ['lifetime', 'monthly', 'monthly_per_spec'].includes(String(plan))
+    const normalizedPlan = ['lifetime', 'monthly', 'monthly_per_spec', 'custom'].includes(String(plan))
         ? String(plan)
         : 'monthly';
     const entry = {
@@ -652,7 +655,22 @@ app.post('/api/admin/licenses/create', requireAdmin('owner'), async (req, res) =
         email: email ? String(email).slice(0, 200) : undefined,
     };
 
-    if (normalizedPlan !== 'lifetime') {
+    if (normalizedPlan === 'custom') {
+        const exp = new Date();
+        const unit = String(durationUnit || 'minutes').toLowerCase();
+        const value = Math.max(1, Number(durationValue) || 1);
+        const safeValue = Math.min(525600, value); // hard cap: 1 year if minutes chosen
+
+        if (unit === 'minutes') exp.setMinutes(exp.getMinutes() + safeValue);
+        else if (unit === 'hours') exp.setHours(exp.getHours() + Math.min(24 * 365, safeValue));
+        else if (unit === 'days') exp.setDate(exp.getDate() + Math.min(3650, safeValue));
+        else if (unit === 'weeks') exp.setDate(exp.getDate() + Math.min(520, safeValue) * 7);
+        else if (unit === 'months') exp.setMonth(exp.getMonth() + Math.min(120, safeValue));
+        else if (unit === 'years') exp.setFullYear(exp.getFullYear() + Math.min(20, safeValue));
+        else exp.setMinutes(exp.getMinutes() + safeValue);
+
+        entry.expiresAt = exp.toISOString();
+    } else if (normalizedPlan !== 'lifetime') {
         const exp = new Date();
         const safeMonths = Math.max(1, Math.min(36, Number(months) || 1));
         exp.setMonth(exp.getMonth() + safeMonths);
@@ -664,7 +682,14 @@ app.post('/api/admin/licenses/create', requireAdmin('owner'), async (req, res) =
 
     db[key] = entry;
     saveDB(db);
-    auditAdmin(req, 'license.create', { key, plan: normalizedPlan, months, specsCount: entry.specs?.length || 0 });
+    auditAdmin(req, 'license.create', {
+        key,
+        plan: normalizedPlan,
+        months,
+        durationValue,
+        durationUnit,
+        specsCount: entry.specs?.length || 0
+    });
     res.json({ ok: true, key, license: entry });
 });
 
@@ -821,6 +846,12 @@ app.get('/api/admin/audit', requireAdmin('support'), async (req, res) => {
     const limit = Math.max(1, Math.min(500, Number(req.query.limit) || 100));
     const items = await readAudit(limit);
     res.json({ items });
+});
+
+app.post('/api/admin/audit/clear', requireAdmin('owner'), async (req, res) => {
+    await clearAudit();
+    auditAdmin(req, 'audit.clear', { cleared: true });
+    res.json({ ok: true });
 });
 
 async function fulfillPerSpecMonthly(payment, specIds, emailFromPayment) {

@@ -46,6 +46,10 @@
     background-attachment: fixed;
 }
 
+.admin-body [hidden] {
+    display: none !important;
+}
+
 /* ── TOP NAV ─────────────────────────────────────────────── */
 .admin-body .site-nav.admin-topbar {
     position: sticky;
@@ -257,6 +261,14 @@
 .admin-body .admin-side-meta strong {
     color: var(--adm-text-2);
     font-size: 12px;
+}
+
+.admin-body mark.admin-hl {
+    background: rgba(0, 229, 192, 0.2);
+    color: #d9fff7;
+    border: 1px solid rgba(0, 229, 192, 0.35);
+    border-radius: 4px;
+    padding: 0 2px;
 }
 
 /* ── MAIN CONTENT ────────────────────────────────────────── */
@@ -939,6 +951,35 @@
     min-height: 18px;
     font-weight: 500;
     animation: fadeIn 0.3s ease;
+}
+
+.admin-body .admin-confirm-modal {
+    position: fixed;
+    inset: 0;
+    background: rgba(5, 8, 15, 0.75);
+    backdrop-filter: blur(5px);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 4000;
+}
+
+.admin-body .admin-confirm-box {
+    width: min(520px, 92vw);
+    padding: 20px;
+    border-radius: 14px;
+    border: 1px solid var(--adm-border-hover);
+}
+
+.admin-body .admin-confirm-box h3 {
+    margin: 0 0 8px;
+    font-size: 18px;
+}
+
+.admin-body .admin-confirm-box p {
+    margin: 0 0 12px;
+    color: var(--adm-text-2);
+    font-size: 13px;
 }
 
 .admin-body .admin-message.is-error {

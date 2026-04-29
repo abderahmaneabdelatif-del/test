@@ -9,7 +9,7 @@
     <link rel="stylesheet" href="css/admin.css">
 </head>
 <body class="admin-body">
-    <nav class="site-nav admin-topbar">
+    <nav class="site-nav admin-topbar" id="adminTopbar" hidden>
         <div class="site-nav-inner">
             <a href="index.html" class="logo"><span class="logo-mark" aria-hidden="true">⚔</span> Max Combat <span class="logo-accent">Assistant</span></a>
             <div class="nav-links">
@@ -21,7 +21,7 @@
     </nav>
 
     <main class="admin-wrap">
-        <section class="admin-hero card card--panel">
+        <section class="admin-hero card card--panel" id="adminHero" hidden>
             <p class="admin-hero-kicker">Control Center</p>
             <h1 class="admin-hero-title">Professional Admin Dashboard</h1>
             <p class="admin-hero-text">Manage licenses, monitor orders, and review audit trails from one secure workspace.</p>
@@ -41,14 +41,16 @@
                 <nav class="admin-side-nav" id="adminSideNav">
                     <a href="#admin-overview" class="admin-nav-link is-active">Overview</a>
                     <a href="#admin-create" class="admin-nav-link">Create License</a>
+                    <a href="#admin-config" class="admin-nav-link">Configuration</a>
                     <a href="#admin-orders" class="admin-nav-link">Orders</a>
                     <a href="#admin-licenses" class="admin-nav-link">Licenses</a>
                     <a href="#admin-audit" class="admin-nav-link">Audit Log</a>
-                    <a href="#admin-config" class="admin-nav-link">Configuration</a>
                 </nav>
                 <div class="admin-side-meta">
                     <span>Last refresh</span>
                     <strong id="adminLastRefresh">-</strong>
+                    <span>Session expires in</span>
+                    <strong id="adminSessionExpiry">-</strong>
                 </div>
             </aside>
 
@@ -81,10 +83,24 @@
                                 <option value="monthly">Monthly</option>
                                 <option value="monthly_per_spec">Monthly Per Spec</option>
                                 <option value="lifetime">Lifetime</option>
+                                <option value="custom">Custom</option>
                             </select>
                         </label>
-                        <label class="admin-label">Months
+                        <label class="admin-label" id="createMonthsLabel">Months
                             <input id="createMonths" class="input-box admin-small-input" type="number" min="1" max="36" value="1">
+                        </label>
+                        <label class="admin-label" id="createCustomDurationLabel" style="display:none;">Custom Duration
+                            <div style="display:grid; grid-template-columns: 1fr 1fr; gap: 8px;">
+                                <input id="createDurationValue" class="input-box admin-small-input" type="number" min="1" value="1">
+                                <select id="createDurationUnit" class="spec-select">
+                                    <option value="minutes">Minutes</option>
+                                    <option value="hours">Hours</option>
+                                    <option value="days">Days</option>
+                                    <option value="weeks">Weeks</option>
+                                    <option value="months">Months</option>
+                                    <option value="years">Years</option>
+                                </select>
+                            </div>
                         </label>
                         <label class="admin-label">Email
                             <input id="createEmail" class="input-box admin-small-input" type="email" placeholder="customer@email.com">
@@ -114,6 +130,11 @@
                     <h3 class="admin-section-title">Orders Monitor <span class="admin-section-meta" id="ordersCount">0</span></h3>
                     <div class="admin-toolbar">
                         <input id="ordersSearch" class="input-box admin-small-input" type="search" placeholder="Search order, email, key">
+                        <select id="ordersSavedView" class="spec-select">
+                            <option value="">Saved view: none</option>
+                            <option value="pending_new">Pending newest</option>
+                            <option value="fulfilled_new">Fulfilled newest</option>
+                        </select>
                         <select id="ordersStatus" class="spec-select">
                             <option value="">All statuses</option>
                             <option value="pending">Pending</option>
@@ -150,11 +171,18 @@
                 <h3 class="admin-section-title">License Inventory <span class="admin-section-meta" id="licensesCount">0</span></h3>
                 <div class="admin-toolbar">
                     <input id="licensesSearch" class="input-box admin-small-input" type="search" placeholder="Search key, email, plan, order">
+                    <select id="licensesSavedView" class="spec-select">
+                        <option value="">Saved view: none</option>
+                        <option value="expiring_soon">Expiring soon</option>
+                        <option value="active_bound">Active + bound</option>
+                        <option value="disabled_only">Disabled only</option>
+                    </select>
                     <select id="licensesPlan" class="spec-select">
                         <option value="">All plans</option>
                         <option value="monthly">Monthly</option>
                         <option value="monthly_per_spec">Monthly Per Spec</option>
                         <option value="lifetime">Lifetime</option>
+                        <option value="custom">Custom</option>
                     </select>
                     <select id="licensesStatus" class="spec-select">
                         <option value="">All status</option>
@@ -174,6 +202,9 @@
                     <button id="licensesSelectVisibleBtn" class="btn-action" type="button">Select visible</button>
                     <button id="refreshLicensesBtn" class="btn-action" type="button">Refresh</button>
                     <button id="bulkDeleteLicensesBtn" class="btn-action admin-danger" type="button" disabled>Bulk delete</button>
+                    <button id="bulkExtendLicensesBtn" class="btn-action" type="button" disabled>Bulk +1 month</button>
+                    <button id="bulkResetHwidBtn" class="btn-action" type="button" disabled>Bulk reset HWID</button>
+                    <button id="bulkToggleLicensesBtn" class="btn-action" type="button" disabled>Bulk toggle</button>
                     <button id="exportLicensesBtn" class="btn-action" type="button">Export CSV</button>
                 </div>
                 <div class="admin-list" id="licensesList" aria-live="polite"></div>
@@ -195,6 +226,7 @@
                 <div class="admin-toolbar admin-toolbar--compact">
                     <input id="auditLimit" class="input-box admin-small-input" type="number" min="10" max="500" value="100" placeholder="Limit">
                     <button id="refreshAuditBtn" class="btn-action" type="button">Refresh</button>
+                    <button id="clearAuditBtn" class="btn-action admin-danger" type="button">Clear</button>
                     <button id="exportAuditBtn" class="btn-action" type="button">Export CSV</button>
                 </div>
                 <div class="admin-table-wrap">
@@ -214,6 +246,20 @@
             </div>
         </section>
     </main>
+
+    <div class="admin-confirm-modal" id="adminConfirmModal" hidden>
+        <div class="admin-confirm-box card card--panel">
+            <h3 id="adminConfirmTitle">Confirm action</h3>
+            <p id="adminConfirmText">Are you sure?</p>
+            <label class="admin-label">Type <span id="adminConfirmKeyword">DELETE</span> to continue
+                <input id="adminConfirmInput" class="input-box admin-small-input" type="text" autocomplete="off">
+            </label>
+            <div class="admin-actions">
+                <button id="adminConfirmCancel" class="btn-action" type="button">Cancel</button>
+                <button id="adminConfirmOk" class="btn-action admin-danger" type="button" disabled>Confirm</button>
+            </div>
+        </div>
+    </div>
 
     <script src="js/admin.js"></script>
 </body>

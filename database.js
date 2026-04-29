@@ -138,6 +138,10 @@ async function readAudit(limit = 200) {
   const res = await pool.query('SELECT data FROM audit_log ORDER BY id DESC LIMIT $1', [safeLimit]);
   return res.rows.map(r => r.data);
 }
+
+async function clearAudit() {
+  await pool.query('DELETE FROM audit_log');
+}
 async function getConfig() {
   const res = await pool.query("SELECT data FROM licenses WHERE key = '__CONFIG__'");
   return res.rows.length ? res.rows[0].data : {};
@@ -164,6 +168,7 @@ module.exports = {
   deletePendingOrder,
   appendAudit,
   readAudit,
+  clearAudit,
   getConfig,
   saveConfig
 };
