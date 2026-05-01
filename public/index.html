@@ -25,16 +25,24 @@
     <main>
         <!-- ════════ HERO ════════ -->
         <section class="hero">
+            <!-- Background effects -->
+            <div class="hero-particles" id="heroParticles"></div>
+            <div class="hero-grid-pattern"></div>
+            
             <div class="hero-content">
                 <div class="hero-badge">
                     <span class="hero-badge-dot"></span>
-                    <span>Season 2 Updated · All 39 Specs</span>
+                    <span>Season 2 Updated</span>
+                    <span class="hero-badge-new">NEW</span>
                 </div>
                 <p class="hero-kicker">World of Warcraft · The War Within</p>
                 <h1>DOMINATE<br><span class="hero-title-line">THE ARENA</span></h1>
                 <p class="hero-lead">The most advanced, hardware-bound rotation assistant. Pixel-perfect timing, smart interrupts, and a builder that keeps you in control.</p>
                 <div class="hero-actions">
-                    <a href="#pricing" class="btn btn-lg">View Plans & Pricing</a>
+                    <a href="#pricing" class="btn btn-lg">
+                        <span>View Plans & Pricing</span>
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+                    </a>
                     <a href="https://discord.gg/yourinvite" target="_blank" rel="noopener noreferrer" class="btn-action btn-lg">
                         <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" style="margin-right:6px"><path d="M20.317 4.3698a19.7913 19.7913 0 00-4.8851-1.5152.0741.0741 0 00-.0785.0371c-.211.3753-.4447.8648-.6083 1.2495-1.8447-.2762-3.68-.2762-5.4868 0-.1636-.3933-.4058-.8742-.6177-1.2495a.077.077 0 00-.0785-.037 19.7363 19.7363 0 00-4.8852 1.515.0699.0699 0 00-.0321.0277C.5334 9.0458-.319 13.5799.0992 18.0578a.0824.0824 0 00.0312.0561 19.9312 19.9312 0 005.9932 3.0294.0777.0777 0 00.0842-.0276c.4616-.6304.8731-1.2952 1.226-1.9942a.076.076 0 00-.0416-.1057 13.1073 13.1073 0 01-1.872-.892.0778.0778 0 01-.0076-.1277c.1258-.0943.2517-.1923.3718-.2914a.0743.0743 0 01.0776-.0105c3.9278 1.7933 8.18 1.7933 12.0614 0a.0739.0739 0 01.0785.0095c.1202.099.246.1981.3728.2924a.077.077 0 01-.0066.1276 12.2986 12.2986 0 01-1.873.8914.0766.0766 0 00-.0407.1067c.3604.698.7719 1.3628 1.225 1.9932a.076.076 0 00.0842.0286 19.8975 19.8975 0 006.0022-3.0294.0776.0776 0 00.0312-.0551c.5004-5.177-.8382-9.6739-3.5485-13.6604a.061.061 0 00-.0312-.0286z"/></svg>
                         Join Discord
@@ -56,10 +64,18 @@
                         <span class="hero-stat-label">Memory Reads</span>
                     </div>
                 </div>
+                <div class="hero-trust">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="M9 12l2 2 4-4"/></svg>
+                    <span>Safe & Anti-Detect</span>
+                    <span class="hero-trust-divider">•</span>
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>
+                    <span>Instant Delivery</span>
+                </div>
             </div>
             <div class="hero-visual">
                 <div class="hero-frame">
                     <div class="hero-frame-glow"></div>
+                    <div class="hero-frame-accent"></div>
                     <img src="images/app-preview.png" alt="Max Combat Assistant — action bar keybinds and spell grid" class="app-mockup" width="960" height="600" fetchpriority="high" decoding="async">
                 </div>
             </div>
@@ -137,7 +153,7 @@
         <section id="pricing" class="section-block section-pricing">
             <div class="section-inner section-inner--wide">
                 <h2 class="section-title"><span class="section-title-text">Choose Your Plan</span></h2>
-                <p class="pricing-subtitle">All plans include full rotation support, smart interrupts, and sequence builder access. Pay with crypto via NOWPayments.</p>
+                <p class="pricing-subtitle">All plans include full rotation support, smart interrupts, and sequence builder access. Pay securely via <strong>PayPal</strong> or <strong>crypto</strong> through NOWPayments.</p>
 
                 <div class="pricing-grid">
                     <!-- MONTHLY -->
@@ -146,7 +162,7 @@
                             <span class="pricing-card-badge">Starter</span>
                             <h3 class="pricing-card-plan">Monthly</h3>
                             <div class="pricing-card-price">
-                                <span class="pricing-price-amount">$30</span>
+                                <span class="pricing-price-amount" id="priceMonthlyDisplay">$—</span>
                                 <span class="pricing-price-period">/ month</span>
                             </div>
                             <p class="pricing-card-desc">Access all 39 specializations. Perfect for trying things out.</p>
@@ -170,10 +186,10 @@
                             <span class="pricing-card-badge pricing-card-badge--gold">Best Value</span>
                             <h3 class="pricing-card-plan">3 Months</h3>
                             <div class="pricing-card-price">
-                                <span class="pricing-price-amount">$75</span>
+                                <span class="pricing-price-amount" id="price3MonthDisplay">$—</span>
                                 <span class="pricing-price-period">/ 3 months</span>
                             </div>
-                            <div class="pricing-save-badge">Save $15 — <strong>$25/mo</strong></div>
+                            <div class="pricing-save-badge" id="price3MonthSaveDisplay" style="opacity: 0;">Calculating...</div>
                             <p class="pricing-card-desc">Best deal for committed players. Lock in your edge for a full season.</p>
                         </div>
                         <ul class="pricing-features-list">
@@ -195,7 +211,7 @@
                             <span class="pricing-card-badge pricing-card-badge--accent">Flexible</span>
                             <h3 class="pricing-card-plan">Per Spec</h3>
                             <div class="pricing-card-price">
-                                <span class="pricing-price-amount" id="heroPriceDisplay">$15</span>
+                                <span class="pricing-price-amount" id="heroPriceDisplay">$—</span>
                                 <span class="pricing-price-period">/ spec / month</span>
                             </div>
                             <p class="pricing-card-desc">Pay only for the specs you play. Ideal for one-trick or alt players.</p>
@@ -216,7 +232,7 @@
 
                 <p class="pricing-guarantee">
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
-                    Secure crypto checkout via <strong>NOWPayments</strong> — USDT, BTC, ETH & 200+ coins accepted
+                    Secure checkout via <strong>PayPal</strong> &amp; <strong>NOWPayments</strong> — Credit cards, USDT, BTC, ETH &amp; 200+ coins accepted
                 </p>
             </div>
         </section>
@@ -225,7 +241,7 @@
         <section id="spec-store" class="section-block section-store">
             <div class="section-inner section-inner--wide">
                 <h2 class="section-title"><span class="section-title-text">Monthly Per Specialization</span></h2>
-                <p class="spec-store-lead"><strong id="specPriceDisplay">$15 USD</strong> per spec, per month. Pick only what you play—your license unlocks those specs until renewal.</p>
+                <p class="spec-store-lead"><strong id="specPriceDisplay">$— USD</strong> per spec, per month. Pick only what you play—your license unlocks those specs until renewal.</p>
                 <div class="spec-toolbar">
                     <input type="search" id="specSearch" class="input-box spec-search" placeholder="Search specs…" autocomplete="off" spellcheck="false">
                     <button type="button" id="specSelectAll" class="btn-action">Select all</button>
@@ -247,12 +263,20 @@
                 </div>
                 <div id="specGrid" class="spec-grid" aria-live="polite"></div>
                 <div class="spec-checkout-bar card card--panel">
+                    <div class="spec-checkout-key-row">
+                        <button type="button" id="specKeyToggle" class="spec-key-toggle">Already have a license key? Add specs →</button>
+                        <div id="specKeyPanel" class="spec-key-panel" style="display:none;">
+                            <label for="specKeyInput" class="spec-key-label">License Key</label>
+                            <input type="text" id="specKeyInput" class="input-box spec-key-input" placeholder="XXXX-XXXX-XXXX-XXXX" autocomplete="off" spellcheck="false" maxlength="19">
+                            <div id="specKeyStatus" class="spec-key-status"></div>
+                        </div>
+                    </div>
                     <div class="spec-checkout-email-row">
                         <label for="specCheckoutEmail" class="spec-email-label">Email for delivery</label>
                         <input type="email" id="specCheckoutEmail" class="input-box spec-email-input" placeholder="you@example.com" autocomplete="email">
                     </div>
                     <div class="spec-total-row">
-                        <p id="specSummary" class="spec-summary">0 specs × $15 = <strong>$0</strong> / month</p>
+                        <p id="specSummary" class="spec-summary">0 specs × $— = <strong>$0</strong> / month</p>
                         <button type="button" id="specPayBtn" class="btn" disabled>Continue to Payment</button>
                     </div>
                     <p class="spec-hint">Crypto checkout via <strong>NOWPayments</strong> when your server is configured; otherwise copy the order payload we generate.</p>
@@ -261,14 +285,54 @@
         </section>
 
         <!-- ════════ CHECKOUT MODAL ════════ -->
-        <div id="checkoutModal" class="checkout-modal" aria-hidden="true" role="dialog" aria-labelledby="checkoutModalTitle">
-            <div class="checkout-modal-backdrop" id="checkoutModalBackdrop"></div>
-            <div class="checkout-modal-panel card card--panel">
-                <button type="button" class="checkout-modal-close" id="checkoutModalClose" aria-label="Close">&times;</button>
-                <h3 id="checkoutModalTitle" class="checkout-modal-title">Checkout</h3>
-                <div id="checkoutModalBody" class="checkout-modal-body"></div>
-                <div id="checkoutModalError" class="checkout-modal-error"></div>
-                <div id="checkoutModalActions" class="checkout-modal-actions"></div>
+        <div id="checkoutModal" class="ck-modal" aria-hidden="true" role="dialog" aria-labelledby="ckTitle">
+            <div class="ck-backdrop" id="ckBackdrop"></div>
+            <div class="ck-panel">
+                <button type="button" class="ck-close" id="ckClose" aria-label="Close">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                </button>
+                <!-- Header -->
+                <div class="ck-header">
+                    <div class="ck-logo">
+                        <svg width="28" height="28" viewBox="0 0 32 32" fill="none">
+                            <circle cx="16" cy="16" r="14" stroke="url(#ckGrad)" stroke-width="2" fill="none"/>
+                            <path d="M10 22l4-12 3 8 3-4" stroke="url(#ckGrad)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+                            <defs><linearGradient id="ckGrad" x1="0" y1="0" x2="32" y2="32"><stop stop-color="#00DDB3"/><stop offset="1" stop-color="#0ea5e9"/></linearGradient></defs>
+                        </svg>
+                    </div>
+                    <div class="ck-header-text">
+                        <h3 id="ckTitle" class="ck-title">Checkout</h3>
+                        <p class="ck-subtitle" id="ckSubtitle">Complete your purchase</p>
+                    </div>
+                </div>
+                <!-- Steps indicator -->
+                <div class="ck-steps" id="ckSteps">
+                    <div class="ck-step" data-step="1">
+                        <div class="ck-step-dot">1</div>
+                        <span class="ck-step-label">Details</span>
+                    </div>
+                    <div class="ck-step-line"></div>
+                    <div class="ck-step" data-step="2">
+                        <div class="ck-step-dot">2</div>
+                        <span class="ck-step-label">Payment</span>
+                    </div>
+                    <div class="ck-step-line"></div>
+                    <div class="ck-step" data-step="3">
+                        <div class="ck-step-dot">3</div>
+                        <span class="ck-step-label">Confirm</span>
+                    </div>
+                    <div class="ck-step-line"></div>
+                    <div class="ck-step" data-step="4">
+                        <div class="ck-step-dot">4</div>
+                        <span class="ck-step-label">Complete</span>
+                    </div>
+                </div>
+                <!-- Body -->
+                <div id="ckBody" class="ck-body"></div>
+                <!-- Error -->
+                <div id="ckError" class="ck-error"></div>
+                <!-- Actions -->
+                <div id="ckActions" class="ck-actions"></div>
             </div>
         </div>
 
@@ -298,7 +362,7 @@
                     <div class="faq-item">
                         <div class="faq-question">What is the difference between Monthly, 3-Month, and Per-Spec? <span class="faq-chevron" aria-hidden="true">▼</span></div>
                         <div class="faq-answer">
-                            <p><strong>Monthly</strong> ($30/mo): All 39 specs unlocked for one month. <strong>3-Month</strong> ($75): Same access but for 3 months at a discounted rate of $25/mo. <strong>Per Spec</strong> (<span id="faqPriceDisplay1">$15</span>/spec/mo): Choose individual specs and pay only for those you play.</p>
+                            <p><strong>Monthly</strong> (<span id="faqMonthlyPrice">$—</span>/mo): All 39 specs unlocked for one month. <strong>3-Month</strong> (<span id="faq3MonthPrice">$—</span>): Same access but for 3 months at a discounted rate of <span id="faq3MonthSavePrice">$—</span>/mo. <strong>Per Spec</strong> (<span id="faqPriceDisplay1">$—</span>/spec/mo): Choose individual specs and pay only for those you play.</p>
                         </div>
                     </div>
                     <div class="faq-item">
@@ -325,7 +389,7 @@
                 <a href="https://discord.gg/yourinvite" target="_blank" rel="noopener noreferrer">Discord</a>
             </div>
             <p>&copy; 2026 Max Combat Assistant. Not affiliated with Blizzard Entertainment.</p>
-            <p class="footer-note">Payments via NOWPayments (USDT / BTC / ETH & 200+ crypto). Keys delivered instantly by email.</p>
+            <p class="footer-note">Payments via <strong>PayPal</strong> or <strong>NOWPayments</strong> (USDT / BTC / ETH &amp; 200+ crypto). Keys delivered instantly by email.</p>
         </div>
     </footer>
 

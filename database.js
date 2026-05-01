@@ -2,7 +2,9 @@ const { Pool } = require('pg');
 
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
-  ssl: { rejectUnauthorized: false }
+  ssl: process.env.NODE_ENV === 'production'
+    ? { rejectUnauthorized: true }
+    : { rejectUnauthorized: false }
 });
 
 async function initDB() {
@@ -142,9 +144,18 @@ async function readAudit(limit = 200) {
 async function clearAudit() {
   await pool.query('DELETE FROM audit_log');
 }
+let cachedConfig = null;
+let lastConfigFetch = 0;
+
 async function getConfig() {
+  const now = Date.now();
+  if (cachedConfig && (now - lastConfigFetch < 60000)) {
+    return cachedConfig;
+  }
   const res = await pool.query("SELECT data FROM licenses WHERE key = '__CONFIG__'");
-  return res.rows.length ? res.rows[0].data : {};
+  cachedConfig = res.rows.length ? res.rows[0].data : {};
+  lastConfigFetch = now;
+  return cachedConfig;
 }
 
 async function saveConfig(data) {
@@ -154,6 +165,8 @@ async function saveConfig(data) {
     "INSERT INTO licenses(key, data) VALUES('__CONFIG__', $1) ON CONFLICT(key) DO UPDATE SET data = EXCLUDED.data",
     [merged]
   );
+  cachedConfig = merged;
+  lastConfigFetch = Date.now();
 }
 
 module.exports = {

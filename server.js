@@ -5,12 +5,55 @@ const path = require('path');
 const crypto = require('crypto');
 const http = require('http');
 const { WebSocketServer } = require('ws');
+const nodemailer = require('nodemailer');
+const rateLimit = require('express-rate-limit');
 
 require('dotenv').config();
 
 const app = express();
-app.use(cors());
-app.use(express.json());
+
+// ── CORS — restrict to production domain ──
+const allowedOrigins = (process.env.ALLOWED_ORIGINS || process.env.PUBLIC_BASE_URL || '')
+    .split(',').map(s => s.trim()).filter(Boolean);
+app.use(cors({
+    origin: (origin, callback) => {
+        // Allow server-to-server (no origin) and localhost in dev
+        if (!origin || allowedOrigins.length === 0) return callback(null, true);
+        if (allowedOrigins.some(o => origin.startsWith(o))) return callback(null, true);
+        return callback(new Error('CORS: origin not allowed'));
+    },
+    credentials: true,
+}));
+
+// ── JSON body size limit (protect against payload flooding) ──
+app.use(express.json({ limit: '50kb' }));
+
+// ── Rate Limiters ──
+const generalLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000, // 15 minutes
+    max: 200,
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: { error: 'Too many requests, please try again later.' },
+});
+
+const authLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000,
+    max: 30, // 30 validate attempts per 15 min per IP
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: { error: 'Too many validation attempts, please try again later.' },
+});
+
+const checkoutLimiter = rateLimit({
+    windowMs: 60 * 60 * 1000, // 1 hour
+    max: 20, // 20 checkout attempts per hour per IP
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: { error: 'Too many checkout attempts, please try again later.' },
+});
+
+app.use(generalLimiter);
 
 const __root = __dirname;
 const DB_FILE = path.join(__root, 'licenses.json');
@@ -20,6 +63,133 @@ const NOWPAYMENTS_API = 'https://api.nowpayments.io/v1';
 
 app.use(express.static(path.join(__root, 'public')));
 // Note: /specs images are now served natively from public/specs directory
+
+// ── Email (SMTP) transporter ──
+const smtpConfig = {
+    host: process.env.SMTP_HOST || '',
+    port: Number(process.env.SMTP_PORT) || 587,
+    secure: process.env.SMTP_SECURE === 'true',
+    auth: {
+        user: process.env.SMTP_USER || '',
+        pass: process.env.SMTP_PASS || '',
+    },
+};
+const emailFrom = process.env.EMAIL_FROM || process.env.SMTP_USER || '';
+let mailTransporter = null;
+function getMailer() {
+    if (!smtpConfig.host || !smtpConfig.auth.user) return null;
+    if (!mailTransporter) {
+        mailTransporter = nodemailer.createTransport(smtpConfig);
+    }
+    return mailTransporter;
+}
+
+async function sendLicenseEmail({ email, licenseKey, plan, specs, expiresAt, kind }) {
+    const mailer = getMailer();
+    if (!mailer || !email) {
+        console.log('[EMAIL] Skipping — no SMTP config or no email address');
+        return { sent: false, reason: 'no-smtp-or-email' };
+    }
+
+    const planLabels = {
+        monthly: 'Monthly (All Specs)',
+        monthly_per_spec: 'Monthly Per Spec',
+        lifetime: 'Lifetime',
+        custom: 'Custom',
+    };
+    const planLabel = planLabels[plan] || plan || 'N/A';
+    const expiryText = plan === 'lifetime' ? 'Never expires' : expiresAt ? new Date(expiresAt).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' }) : 'Timer starts on first bind';
+
+    // Specs list HTML
+    let specsHtml = '';
+    if (Array.isArray(specs) && specs.length > 0) {
+        const specItems = specs.map(s => {
+            const label = typeof s === 'object' ? s.id : s;
+            const expDate = typeof s === 'object' && s.expiresAt ? new Date(s.expiresAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : '';
+            return `<tr>
+                <td style="padding:8px 12px;border-bottom:1px solid #1e293b;color:#e2e8f0;font-weight:600;">${label}</td>
+                <td style="padding:8px 12px;border-bottom:1px solid #1e293b;color:#94a3b8;">${expDate || 'Pending'}</td>
+            </tr>`;
+        }).join('');
+        specsHtml = `
+        <div style="margin:20px 0;">
+            <p style="color:#94a3b8;font-size:13px;margin:0 0 8px;font-weight:700;text-transform:uppercase;letter-spacing:1px;">Your Specializations</p>
+            <table style="width:100%;border-collapse:collapse;background:#0f172a;border-radius:8px;overflow:hidden;">
+                <thead><tr>
+                    <th style="padding:8px 12px;text-align:left;font-size:11px;color:#64748b;border-bottom:1px solid #1e293b;text-transform:uppercase;">Spec</th>
+                    <th style="padding:8px 12px;text-align:left;font-size:11px;color:#64748b;border-bottom:1px solid #1e293b;text-transform:uppercase;">Expires</th>
+                </tr></thead>
+                <tbody>${specItems}</tbody>
+            </table>
+        </div>`;
+    }
+
+    const html = `
+    <div style="max-width:520px;margin:0 auto;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:#0a0e1a;color:#e2e8f0;border-radius:16px;overflow:hidden;">
+        <!-- Header -->
+        <div style="background:linear-gradient(135deg,#00ddb3 0%,#0ea5e9 100%);padding:28px 24px;text-align:center;">
+            <h1 style="margin:0;font-size:22px;font-weight:800;color:#0a0e1a;letter-spacing:-0.5px;">TWW Combat Assistant</h1>
+            <p style="margin:6px 0 0;font-size:13px;color:rgba(10,14,26,0.7);font-weight:600;">Your license is ready! 🎉</p>
+        </div>
+
+        <!-- Body -->
+        <div style="padding:24px;">
+            <p style="margin:0 0 16px;font-size:14px;color:#94a3b8;">Thank you for your purchase! Here are your license details:</p>
+
+            <!-- License Key -->
+            <div style="background:#111827;border:1px solid #1e293b;border-radius:10px;padding:16px;text-align:center;margin-bottom:20px;">
+                <p style="margin:0 0 6px;font-size:10px;color:#64748b;text-transform:uppercase;letter-spacing:1.5px;font-weight:700;">License Key</p>
+                <p style="margin:0;font-family:'JetBrains Mono',monospace;font-size:18px;font-weight:700;color:#00ddb3;letter-spacing:2px;">${licenseKey}</p>
+            </div>
+
+            <!-- Details Grid -->
+            <table style="width:100%;border-collapse:collapse;margin-bottom:4px;">
+                <tr>
+                    <td style="padding:8px 0;color:#64748b;font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;">Plan</td>
+                    <td style="padding:8px 0;color:#e2e8f0;font-size:13px;text-align:right;font-weight:600;">${planLabel}</td>
+                </tr>
+                <tr>
+                    <td style="padding:8px 0;color:#64748b;font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;">Expires</td>
+                    <td style="padding:8px 0;color:#e2e8f0;font-size:13px;text-align:right;font-weight:600;">${expiryText}</td>
+                </tr>
+            </table>
+
+            ${specsHtml}
+
+            <!-- How to activate -->
+            <div style="background:#111827;border:1px solid #1e293b;border-radius:10px;padding:16px;margin-top:16px;">
+                <p style="margin:0 0 8px;font-size:12px;font-weight:700;color:#00ddb3;text-transform:uppercase;letter-spacing:1px;">How to Activate</p>
+                <ol style="margin:0;padding-left:18px;color:#94a3b8;font-size:13px;line-height:1.7;">
+                    <li>Open TWW Combat Assistant</li>
+                    <li>Go to the License section</li>
+                    <li>Enter your license key above</li>
+                    <li>Select your specialization and start! 🚀</li>
+                </ol>
+            </div>
+
+            <p style="margin:20px 0 0;font-size:11px;color:#475569;text-align:center;">If you did not make this purchase, please ignore this email.</p>
+        </div>
+
+        <!-- Footer -->
+        <div style="background:#060a14;padding:14px 24px;text-align:center;border-top:1px solid #1e293b;">
+            <p style="margin:0;font-size:11px;color:#475569;">© ${new Date().getFullYear()} TWW Combat Assistant. All rights reserved.</p>
+        </div>
+    </div>`;
+
+    try {
+        const result = await mailer.sendMail({
+            from: emailFrom,
+            to: email,
+            subject: `Your License Key — TWW Combat Assistant`,
+            html,
+        });
+        console.log(`[EMAIL] Sent license key to ${email} — ${result.messageId}`);
+        return { sent: true, messageId: result.messageId };
+    } catch (err) {
+        console.error(`[EMAIL] Failed to send to ${email}:`, err.message);
+        return { sent: false, reason: err.message };
+    }
+}
 
 function publicBaseUrl() {
     const u = (process.env.PUBLIC_BASE_URL || '').replace(/\/$/, '');
@@ -40,6 +210,14 @@ async function getActivePrice() {
         return Number(conf.pricePerSpecUsdPerMonth);
     }
     return cat.pricePerSpecUsdPerMonth || 6;
+}
+
+async function getPlanPrices() {
+    const conf = await getConfig();
+    return {
+        priceMonthlyAll: conf && conf.priceMonthlyAll != null ? Number(conf.priceMonthlyAll) : 30,
+        price3MonthAll: conf && conf.price3MonthAll != null ? Number(conf.price3MonthAll) : 75
+    };
 }
 
 function validSpecIdsSet() {
@@ -135,8 +313,9 @@ function requireAdmin(minRole = 'support') {
             return res.status(503).json({ error: 'Admin API disabled: set ADMIN_TOKEN or ADMIN_ACCOUNTS_JSON' });
         }
 
+        // Token only from header or body — NOT from query string (avoids leaking in logs)
         const provided = String(
-            req.get('x-admin-token') || req.query.token || (req.body && req.body.adminToken) || ''
+            req.get('x-admin-token') || (req.body && req.body.adminToken) || ''
         ).trim();
         const matched = accounts.find((a) => a.token === provided);
         if (!matched) {
@@ -189,8 +368,8 @@ async function buildAdminStats() {
     const orders = await loadPendingOrders();
     const now = new Date();
     const licenses = Object.entries(db).map(([key, value]) => ({ key, ...value }));
-    const active = licenses.filter((l) => l.active && (l.plan === 'lifetime' || new Date(l.expiresAt) > now));
-    const expired = licenses.filter((l) => l.plan !== 'lifetime' && new Date(l.expiresAt) <= now);
+    const active = licenses.filter((l) => l.active && (l.plan === 'lifetime' || new Date(getLicenseExpiresAt(l)) > now));
+    const expired = licenses.filter((l) => l.plan !== 'lifetime' && new Date(getLicenseExpiresAt(l)) <= now);
     const monthlyPerSpec = licenses.filter((l) => l.plan === 'monthly_per_spec').length;
     const pendingOrders = orders.filter((o) => String(o.status || 'pending') !== 'fulfilled').length;
     const fulfilledOrders = orders.filter((o) => String(o.status || '') === 'fulfilled').length;
@@ -264,6 +443,268 @@ async function nowpaymentsCreateInvoice(body) {
     return data;
 }
 
+function paypalApiBase() {
+    const mode = String(process.env.PAYPAL_MODE || 'live').toLowerCase();
+    return mode === 'sandbox'
+        ? 'https://api-m.sandbox.paypal.com'
+        : 'https://api-m.paypal.com';
+}
+
+function paypalEnabled() {
+    return !!(process.env.PAYPAL_CLIENT_ID && process.env.PAYPAL_CLIENT_SECRET && publicBaseUrl());
+}
+
+async function paypalAccessToken() {
+    const clientId = process.env.PAYPAL_CLIENT_ID;
+    const clientSecret = process.env.PAYPAL_CLIENT_SECRET;
+    if (!clientId || !clientSecret) {
+        throw new Error('PAYPAL_CLIENT_ID / PAYPAL_CLIENT_SECRET are missing');
+    }
+
+    const auth = Buffer.from(`${clientId}:${clientSecret}`).toString('base64');
+    const res = await fetch(`${paypalApiBase()}/v1/oauth2/token`, {
+        method: 'POST',
+        headers: {
+            Authorization: `Basic ${auth}`,
+            'Content-Type': 'application/x-www-form-urlencoded',
+        },
+        body: 'grant_type=client_credentials',
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || !data.access_token) {
+        throw new Error(data.error_description || data.error || `PayPal token HTTP ${res.status}`);
+    }
+    return data.access_token;
+}
+
+async function paypalCreateOrder({ amountUsd, orderId, description }) {
+    const base = publicBaseUrl();
+    if (!base) throw new Error('PUBLIC_BASE_URL is missing');
+
+    const token = await paypalAccessToken();
+    const res = await fetch(`${paypalApiBase()}/v2/checkout/orders`, {
+        method: 'POST',
+        headers: {
+            Authorization: `Bearer ${token}`,
+            'Content-Type': 'application/json',
+            Prefer: 'return=representation',
+        },
+        body: JSON.stringify({
+            intent: 'CAPTURE',
+            purchase_units: [
+                {
+                    reference_id: orderId,
+                    custom_id: orderId,
+                    description,
+                    amount: {
+                        currency_code: 'USD',
+                        value: Number(amountUsd).toFixed(2),
+                    },
+                },
+            ],
+            application_context: {
+                brand_name: 'Max Combat Assistant',
+                landing_page: 'LOGIN',
+                user_action: 'PAY_NOW',
+                return_url: `${base}/payment-success.html?provider=paypal&order=${encodeURIComponent(orderId)}`,
+                cancel_url: `${base}/index.html#pricing`,
+            },
+        }),
+    });
+
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || !data.id) {
+        throw new Error(data.message || data.details?.[0]?.description || `PayPal create order HTTP ${res.status}`);
+    }
+
+    const approveUrl = Array.isArray(data.links)
+        ? (data.links.find((l) => l.rel === 'approve') || {}).href
+        : null;
+    if (!approveUrl) throw new Error('PayPal approve URL missing');
+    return { paypalOrderId: data.id, approveUrl };
+}
+
+async function paypalCaptureOrder(paypalOrderId) {
+    const token = await paypalAccessToken();
+    const res = await fetch(`${paypalApiBase()}/v2/checkout/orders/${encodeURIComponent(paypalOrderId)}/capture`, {
+        method: 'POST',
+        headers: {
+            Authorization: `Bearer ${token}`,
+            'Content-Type': 'application/json',
+            Prefer: 'return=representation',
+        },
+        body: '{}',
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+        throw new Error(data.message || data.details?.[0]?.description || `PayPal capture HTTP ${res.status}`);
+    }
+    return data;
+}
+
+function captureCompleted(captureData) {
+    if (!captureData || String(captureData.status || '').toUpperCase() !== 'COMPLETED') return false;
+    const captures = captureData.purchase_units?.[0]?.payments?.captures || [];
+    return captures.some((c) => String(c.status || '').toUpperCase() === 'COMPLETED');
+}
+
+function generateUniqueLicenseKey(db) {
+    let key = generateLicenseKey();
+    while (db[key]) key = generateLicenseKey();
+    return key;
+}
+
+async function fulfillPendingOrderToLicense(pending, meta = {}) {
+    if (!pending || !pending.orderId) throw new Error('Invalid pending order');
+    if (String(pending.status || '').toLowerCase() === 'fulfilled' && pending.licenseKey) {
+        return { key: pending.licenseKey, alreadyFulfilled: true };
+    }
+
+    // ── Add specs to an existing license ──
+    if (pending.licenseKey && pending.kind === 'per_spec_monthly') {
+        const db = await loadDB();
+        const existingKey = normalizeLicenseKey(pending.licenseKey);
+        const license = db[existingKey];
+
+        if (!license) throw new Error('License not found for add-specs');
+        if (!license.active) throw new Error('License is disabled');
+        if (license.plan !== 'monthly_per_spec') throw new Error('License is not per-spec plan');
+
+        const existingNormalized = normalizeSpecs(license.specs);
+        const existingMap = new Map(existingNormalized.map(s => [s.id, s]));
+        const newSpecs = Array.isArray(pending.specIds) ? pending.specIds : [];
+        let addedCount = 0;
+        const nowAdd = new Date();
+        const isBound = !!license.hwid || !!license._expiryStarted;
+
+        for (const id of newSpecs) {
+            const sid = String(id);
+            const existing = existingMap.get(sid);
+            if (existing) {
+                // If expired, renew it
+                if (existing.expiresAt && new Date(existing.expiresAt) <= nowAdd) {
+                    existing.addedAt = nowAdd.toISOString();
+                    if (isBound) {
+                        const expAdd = new Date(nowAdd);
+                        expAdd.setMonth(expAdd.getMonth() + 1);
+                        existing.expiresAt = expAdd.toISOString();
+                    } else {
+                        existing.expiresAt = null; // Timer not started yet
+                    }
+                    addedCount++;
+                }
+                // If still active, skip
+            } else {
+                if (isBound) {
+                    const expAdd = new Date(nowAdd);
+                    expAdd.setMonth(expAdd.getMonth() + 1);
+                    existingMap.set(sid, { id: sid, addedAt: nowAdd.toISOString(), expiresAt: expAdd.toISOString() });
+                } else {
+                    existingMap.set(sid, { id: sid, addedAt: nowAdd.toISOString(), expiresAt: null });
+                }
+                addedCount++;
+            }
+        }
+        license.specs = [...existingMap.values()];
+        license.pricePerSpecUsdPerMonth = await getActivePrice();
+        license.expiresAt = getLicenseExpiresAt(license);
+
+        if (meta.paypalOrderId) license.paypalOrderId = String(meta.paypalOrderId);
+        if (meta.paypalCaptureId) license.paypalCaptureId = String(meta.paypalCaptureId);
+
+        await saveDB(db);
+
+        await upsertPendingOrder({
+            ...pending,
+            status: 'fulfilled',
+            licenseKey: existingKey,
+            fulfilledAt: new Date().toISOString(),
+            paypalOrderId: meta.paypalOrderId || pending.paypalOrderId,
+            paypalCaptureId: meta.paypalCaptureId || pending.paypalCaptureId,
+        });
+
+        // Send email with updated license info
+        if (license.email) {
+            sendLicenseEmail({
+                email: license.email,
+                licenseKey: existingKey,
+                plan: license.plan,
+                specs: license.specs,
+                expiresAt: license.expiresAt,
+                kind: pending.kind,
+            }).catch(err => console.error('[EMAIL] Add-specs email error:', err.message));
+        }
+
+        return { key: existingKey, alreadyFulfilled: false, specsAdded: true, addedCount };
+    }
+
+    // ── Create a new license ──
+    const db = await loadDB();
+    const key = generateUniqueLicenseKey(db);
+    const nowIso = new Date().toISOString();
+    const email = pending.email ? String(pending.email).slice(0, 200) : undefined;
+
+    const entry = {
+        hwid: null,
+        createdAt: nowIso,
+        active: true,
+        orderId: pending.orderId,
+        email,
+    };
+
+    if (pending.kind === 'per_spec_monthly') {
+        entry.plan = 'monthly_per_spec';
+        // Store duration but don't set expiresAt yet — timer starts when bound
+        entry.pendingDurationMonths = 1;
+        entry._expiryStarted = false;
+        entry.expiresAt = null; // Will be set when HWID is bound
+        const nowIso2 = new Date().toISOString();
+        entry.specs = Array.isArray(pending.specIds)
+            ? pending.specIds.map(id => ({ id: String(id), addedAt: nowIso2, expiresAt: null }))
+            : [];
+        entry.pricePerSpecUsdPerMonth = await getActivePrice();
+    } else if (pending.kind === '3month_all') {
+        entry.plan = 'monthly';
+        entry.pendingDurationMonths = 3;
+        entry._expiryStarted = false;
+        entry.expiresAt = null; // Will be set when HWID is bound
+    } else {
+        entry.plan = 'monthly';
+        entry.pendingDurationMonths = 1;
+        entry._expiryStarted = false;
+        entry.expiresAt = null; // Will be set when HWID is bound
+    }
+
+    if (meta.paypalOrderId) entry.paypalOrderId = String(meta.paypalOrderId);
+    if (meta.paypalCaptureId) entry.paypalCaptureId = String(meta.paypalCaptureId);
+
+    db[key] = entry;
+    await saveDB(db);
+
+    await upsertPendingOrder({
+        ...pending,
+        status: 'fulfilled',
+        licenseKey: key,
+        fulfilledAt: new Date().toISOString(),
+        paypalOrderId: meta.paypalOrderId || pending.paypalOrderId,
+        paypalCaptureId: meta.paypalCaptureId || pending.paypalCaptureId,
+    });
+
+    // Send email with license key
+    if (email) {
+        sendLicenseEmail({
+            email,
+            licenseKey: key,
+            plan: entry.plan,
+            specs: entry.specs || null,
+            expiresAt: entry.expiresAt,
+            kind: pending.kind,
+        }).catch(err => console.error('[EMAIL] New license email error:', err.message));
+    }
+
+    return { key, alreadyFulfilled: false };
+}
+
 function licenseAllowsSpec(license, specId) {
     if (!specId) return true;
     if (license.plan === 'lifetime' || license.plan === 'monthly') {
@@ -273,41 +714,390 @@ function licenseAllowsSpec(license, specId) {
         if (!license.specs || !Array.isArray(license.specs) || license.specs.length === 0) {
             return false;
         }
-        return license.specs.includes(specId);
+        const spec = findSpecEntry(license.specs, specId);
+        if (!spec) return false;
+        // Per-spec expiration check
+        if (spec.expiresAt && new Date(spec.expiresAt) <= new Date()) return false;
+        return true;
     }
     if (!license.specs || !Array.isArray(license.specs) || license.specs.length === 0) {
         return true;
     }
-    return license.specs.includes(specId);
+    const spec = findSpecEntry(license.specs, specId);
+    if (!spec) return true; // old format: string array, not found = allowed
+    if (spec.expiresAt && new Date(spec.expiresAt) <= new Date()) return false;
+    return true;
+}
+
+// ── Per-spec data helpers ──
+// Old format: specs = ["dk_frost", "mage_fire"]
+// New format: specs = [{id:"dk_frost", addedAt:"...", expiresAt:"..."}, ...]
+
+function normalizeSpecs(specs) {
+    if (!Array.isArray(specs)) return [];
+    return specs.map(s => {
+        if (typeof s === 'string') {
+            return { id: s, addedAt: null, expiresAt: null };
+        }
+        return {
+            id: String(s.id || ''),
+            addedAt: s.addedAt || null,
+            expiresAt: s.expiresAt || null,
+        };
+    }).filter(s => s.id);
+}
+
+function findSpecEntry(specs, specId) {
+    const normalized = normalizeSpecs(specs);
+    return normalized.find(s => s.id === String(specId)) || null;
+}
+
+function getActiveSpecIds(specs) {
+    const now = new Date();
+    return normalizeSpecs(specs)
+        .filter(s => !s.expiresAt || new Date(s.expiresAt) > now)
+        .map(s => s.id);
+}
+
+function getExpiredSpecIds(specs) {
+    const now = new Date();
+    return normalizeSpecs(specs)
+        .filter(s => s.expiresAt && new Date(s.expiresAt) <= now)
+        .map(s => s.id);
+}
+
+function getLicenseExpiresAt(license) {
+    // Lifetime never expires
+    if (license.plan === 'lifetime') return license.expiresAt || '2099-12-31';
+    // Not yet bound — timer hasn't started, return far future so it's not expired
+    if (!license.hwid && !license._expiryStarted) return '2099-12-31';
+    // For per-spec: return the latest spec expiration
+    if (license.plan === 'monthly_per_spec' && Array.isArray(license.specs)) {
+        const normalized = normalizeSpecs(license.specs);
+        const dates = normalized.map(s => s.expiresAt).filter(Boolean).map(d => new Date(d));
+        if (dates.length) return new Date(Math.max(...dates)).toISOString();
+    }
+    return license.expiresAt || '2099-12-31';
 }
 
 // ── API: Spec catalog ──
 app.get('/api/specs', async (req, res) => {
+    // Pricing/spec catalog changes should be visible immediately in admin/site.
+    res.set('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+    res.set('Pragma', 'no-cache');
+    res.set('Expires', '0');
+    res.set('Surrogate-Control', 'no-store');
     const cat = loadSpecsCatalog();
     cat.pricePerSpecUsdPerMonth = await getActivePrice();
+    const plans = await getPlanPrices();
+    cat.priceMonthlyAll = plans.priceMonthlyAll;
+    cat.price3MonthAll = plans.price3MonthAll;
     res.json(cat);
 });
 
 // ── API: Checkout config (what the UI can rely on) ──
 app.get('/api/checkout/config', (req, res) => {
     const base = publicBaseUrl();
+    const testMode = String(process.env.CHECKOUT_TEST_MODE || '').toLowerCase() === 'true';
     res.json({
         invoiceEnabled: !!(process.env.NOWPAYMENTS_API_KEY && base),
+        paypalEnabled: paypalEnabled() || testMode,
+        testMode,
         publicBaseUrl: base,
     });
 });
 
+app.post('/api/checkout/paypal/create-order', checkoutLimiter, async (req, res) => {
+    if (!paypalEnabled()) {
+        return res.status(503).json({ error: 'PayPal checkout is not configured on server' });
+    }
+
+    const { kind, plan, email, specIds, licenseKey } = req.body || {};
+    const em = (email && String(email).trim()) || '';
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(em)) {
+        return res.status(400).json({ error: 'Enter a valid email for license delivery.' });
+    }
+
+    let pending = null;
+    if (kind === 'plan') {
+        const plans = await getPlanPrices();
+        const planConfig = {
+            monthly: { label: 'Monthly — All Specs', amount: plans.priceMonthlyAll, kind: 'monthly_all' },
+            '3month': { label: '3-Month — All Specs', amount: plans.price3MonthAll, kind: '3month_all' },
+        };
+        const cfg = planConfig[String(plan || '')];
+        if (!cfg) return res.status(400).json({ error: 'Invalid plan type.' });
+
+        const orderId = `MCA-PP-${Date.now()}-${crypto.randomBytes(4).toString('hex').toUpperCase()}`;
+        pending = {
+            kind: cfg.kind,
+            orderId,
+            specIds: [],
+            specLabels: [],
+            selectedSummary: cfg.label,
+            amountUsd: Number(cfg.amount.toFixed(2)),
+            currency: 'USD',
+            email: em.slice(0, 200),
+            createdAt: new Date().toISOString(),
+            status: 'pending',
+        };
+    } else if (kind === 'per_spec') {
+        const allowed = validSpecIdsSet();
+        let normalized = Array.isArray(specIds)
+            ? [...new Set(specIds.map((s) => String(s)))]
+            : [];
+        if (!normalized.length) {
+            return res.status(400).json({ error: 'Select at least one specialization.' });
+        }
+        for (const id of normalized) {
+            if (!allowed.has(id)) return res.status(400).json({ error: `Unknown spec: ${id}` });
+        }
+
+        // If licenseKey provided, validate and filter out already-owned specs
+        let existingKey = null;
+        let existingSpecs = [];
+        if (licenseKey) {
+            const nk = normalizeLicenseKey(String(licenseKey).trim());
+            const db = await loadDB();
+            const lic = db[nk];
+            if (!lic) return res.status(400).json({ error: 'License key not found.' });
+            if (!lic.active) return res.status(400).json({ error: 'This license is disabled.' });
+            if (lic.plan !== 'monthly_per_spec') return res.status(400).json({ error: 'Only per-spec licenses support adding specs.' });
+            const now = new Date();
+            // Allow adding specs even if some are expired, as long as key is active
+            // (no global expiry check needed for per-spec keys)
+
+            existingKey = nk;
+            existingSpecs = getActiveSpecIds(lic.specs);
+
+            // Filter out specs already active on the license
+            const ownedSet = new Set(existingSpecs.map((s) => String(s)));
+            normalized = normalized.filter((id) => !ownedSet.has(id));
+
+            if (!normalized.length) {
+                return res.status(400).json({ error: 'All selected specs are already on this license.' });
+            }
+        }
+
+        const orderId = `MCA-PP-${Date.now()}-${crypto.randomBytes(4).toString('hex').toUpperCase()}`;
+        const amountUsd = Number((normalized.length * (await getActivePrice())).toFixed(2));
+        const meta = selectedSpecsMeta(normalized);
+        pending = {
+            kind: 'per_spec_monthly',
+            orderId,
+            specIds: meta.ids,
+            specLabels: meta.labels,
+            selectedSummary: selectedSpecsShortText(meta.ids),
+            amountUsd,
+            currency: 'USD',
+            email: em.slice(0, 200),
+            createdAt: new Date().toISOString(),
+            status: 'pending',
+            ...(existingKey ? { licenseKey: existingKey } : {}),
+        };
+    } else {
+        return res.status(400).json({ error: 'Invalid checkout kind' });
+    }
+
+    try {
+        const pp = await paypalCreateOrder({
+            amountUsd: pending.amountUsd,
+            orderId: pending.orderId,
+            description: `Max Combat Assistant — ${pending.selectedSummary || pending.kind}`,
+        });
+        pending.paypalOrderId = pp.paypalOrderId;
+        await upsertPendingOrder(pending);
+        return res.json({
+            ok: true,
+            provider: 'paypal',
+            orderId: pending.orderId,
+            paypalOrderId: pp.paypalOrderId,
+            approveUrl: pp.approveUrl,
+            amountUsd: pending.amountUsd,
+            currency: pending.currency || 'USD',
+        });
+    } catch (e) {
+        return res.status(502).json({ error: 'PayPal create order failed', detail: e.message || String(e) });
+    }
+});
+
+app.post('/api/checkout/paypal/capture', checkoutLimiter, async (req, res) => {
+    if (!paypalEnabled()) {
+        return res.status(503).json({ error: 'PayPal checkout is not configured on server' });
+    }
+    const paypalOrderId = String(req.body?.paypalOrderId || req.body?.token || '').trim();
+    const orderId = String(req.body?.orderId || '').trim();
+    if (!paypalOrderId) return res.status(400).json({ error: 'Missing paypalOrderId' });
+
+    const list = await loadPendingOrders();
+    const pending = list.find((o) =>
+        (orderId && String(o.orderId || '') === orderId) ||
+        String(o.paypalOrderId || '') === paypalOrderId
+    );
+    if (!pending) return res.status(404).json({ error: 'Pending order not found' });
+
+    if (String(pending.status || '').toLowerCase() === 'fulfilled' && pending.licenseKey) {
+        return res.json({ ok: true, orderId: pending.orderId, licenseKey: pending.licenseKey, alreadyFulfilled: true });
+    }
+
+    try {
+        const capture = await paypalCaptureOrder(paypalOrderId);
+        if (!captureCompleted(capture)) {
+            return res.status(409).json({ error: 'PayPal payment not completed', status: capture.status || 'UNKNOWN' });
+        }
+        const cap = capture.purchase_units?.[0]?.payments?.captures?.[0];
+        const out = await fulfillPendingOrderToLicense(pending, {
+            paypalOrderId,
+            paypalCaptureId: cap?.id || '',
+        });
+        return res.json({
+            ok: true,
+            provider: 'paypal',
+            orderId: pending.orderId,
+            licenseKey: out.key,
+            alreadyFulfilled: out.alreadyFulfilled,
+        });
+    } catch (e) {
+        return res.status(502).json({ error: 'PayPal capture failed', detail: e.message || String(e) });
+    }
+});
+
+// ── API: Test checkout — simulate full flow without real payment ──
+app.post('/api/checkout/test-create', async (req, res) => {
+    const { kind, plan, email, specIds, licenseKey } = req.body || {};
+    const em = (email && String(email).trim()) || '';
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(em)) {
+        return res.status(400).json({ error: 'Enter a valid email for license delivery.' });
+    }
+
+    let pending = null;
+    if (kind === 'plan') {
+        const plans = await getPlanPrices();
+        const planConfig = {
+            monthly: { label: 'Monthly — All Specs', amount: plans.priceMonthlyAll, kind: 'monthly_all' },
+            '3month': { label: '3-Month — All Specs', amount: plans.price3MonthAll, kind: '3month_all' },
+        };
+        const cfg = planConfig[String(plan || '')];
+        if (!cfg) return res.status(400).json({ error: 'Invalid plan type.' });
+
+        const orderId = `MCA-TEST-${Date.now()}-${crypto.randomBytes(4).toString('hex').toUpperCase()}`;
+        pending = {
+            kind: cfg.kind,
+            orderId,
+            specIds: [],
+            specLabels: [],
+            selectedSummary: cfg.label,
+            amountUsd: Number(cfg.amount.toFixed(2)),
+            currency: 'USD',
+            email: em.slice(0, 200),
+            createdAt: new Date().toISOString(),
+            status: 'pending',
+        };
+    } else if (kind === 'per_spec') {
+        const allowed = validSpecIdsSet();
+        let normalized = Array.isArray(specIds)
+            ? [...new Set(specIds.map((s) => String(s)))]
+            : [];
+        if (!normalized.length) {
+            return res.status(400).json({ error: 'Select at least one specialization.' });
+        }
+        for (const id of normalized) {
+            if (!allowed.has(id)) return res.status(400).json({ error: `Unknown spec: ${id}` });
+        }
+
+        let existingKey = null;
+        let existingSpecs = [];
+        if (licenseKey) {
+            const nk = normalizeLicenseKey(String(licenseKey).trim());
+            const db = await loadDB();
+            const lic = db[nk];
+            if (!lic) return res.status(400).json({ error: 'License key not found.' });
+            if (!lic.active) return res.status(400).json({ error: 'This license is disabled.' });
+            if (lic.plan !== 'monthly_per_spec') return res.status(400).json({ error: 'Only per-spec licenses support adding specs.' });
+            existingKey = nk;
+            existingSpecs = getActiveSpecIds(lic.specs);
+            const ownedSet = new Set(existingSpecs.map((s) => String(s)));
+            normalized = normalized.filter((id) => !ownedSet.has(id));
+            if (!normalized.length) {
+                return res.status(400).json({ error: 'All selected specs are already on this license.' });
+            }
+        }
+
+        const orderId = `MCA-TEST-${Date.now()}-${crypto.randomBytes(4).toString('hex').toUpperCase()}`;
+        const amountUsd = Number((normalized.length * (await getActivePrice())).toFixed(2));
+        const meta = selectedSpecsMeta(normalized);
+        pending = {
+            kind: 'per_spec_monthly',
+            orderId,
+            specIds: meta.ids,
+            specLabels: meta.labels,
+            selectedSummary: selectedSpecsShortText(meta.ids),
+            amountUsd,
+            currency: 'USD',
+            email: em.slice(0, 200),
+            createdAt: new Date().toISOString(),
+            status: 'pending',
+            ...(existingKey ? { licenseKey: existingKey } : {}),
+        };
+    } else {
+        return res.status(400).json({ error: 'Invalid checkout kind' });
+    }
+
+    await upsertPendingOrder(pending);
+
+    return res.json({
+        ok: true,
+        provider: 'test',
+        orderId: pending.orderId,
+        amountUsd: pending.amountUsd,
+        currency: pending.currency || 'USD',
+        email: pending.email,
+        message: 'Test order created — use /api/checkout/test-capture to fulfill',
+    });
+});
+
+app.post('/api/checkout/test-capture', async (req, res) => {
+    const orderId = String(req.body?.orderId || '').trim();
+    if (!orderId) return res.status(400).json({ error: 'orderId required' });
+
+    const orders = await loadPendingOrders();
+    const pending = orders.find(o => o.orderId === orderId);
+    if (!pending) return res.status(404).json({ error: 'Order not found' });
+    if (String(pending.status || '').toLowerCase() === 'fulfilled') {
+        return res.json({ ok: true, key: pending.licenseKey, alreadyFulfilled: true });
+    }
+
+    try {
+        const out = await fulfillPendingOrderToLicense(pending, {
+            paypalOrderId: `TEST-${orderId}`,
+            paypalCaptureId: `TEST-CAPTURE-${Date.now()}`,
+        });
+        return res.json({
+            ok: true,
+            provider: 'test',
+            orderId: pending.orderId,
+            licenseKey: out.key,
+            alreadyFulfilled: out.alreadyFulfilled,
+            specsAdded: out.specsAdded || false,
+            addedCount: out.addedCount || 0,
+        });
+    } catch (e) {
+        return res.status(500).json({ error: 'Test fulfillment failed', detail: e.message || String(e) });
+    }
+});
+
 // ── API: Plan checkout (monthly / 3-month — all specs) ──
-app.post('/api/checkout/plan', async (req, res) => {
+app.post('/api/checkout/plan', checkoutLimiter, async (req, res) => {
     const { plan, email, months, amountUsd } = req.body || {};
     const em = (email && String(email).trim()) || '';
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(em)) {
         return res.status(400).json({ error: 'Enter a valid email for license delivery.' });
     }
 
+    const plans = await getPlanPrices();
     const planConfig = {
-        monthly:  { label: 'Monthly — All Specs', amount: 30, months: 1 },
-        '3month': { label: '3-Month — All Specs', amount: 75, months: 3 },
+        monthly:  { label: 'Monthly — All Specs', amount: plans.priceMonthlyAll, months: 1 },
+        '3month': { label: '3-Month — All Specs', amount: plans.price3MonthAll, months: 3 },
     };
     const cfg = planConfig[plan];
     if (!cfg) {
@@ -435,7 +1225,7 @@ app.post('/api/checkout-draft', async (req, res) => {
 });
 
 // ── API: Professional checkout — NOWPayments invoice + IPN ──
-app.post('/api/checkout/per-spec', async (req, res) => {
+app.post('/api/checkout/per-spec', checkoutLimiter, async (req, res) => {
     const allowed = validSpecIdsSet();
     const cat = loadSpecsCatalog();
     const priceEach = await getActivePrice();
@@ -540,15 +1330,20 @@ app.post('/api/checkout/per-spec', async (req, res) => {
 });
 
 // ── API: Validate License & Bind HWID ──
-app.post('/api/validate', async (req, res) => {
+app.post('/api/validate', authLimiter, async (req, res) => {
     const { key, hwid, spec } = req.body;
 
     if (!key || !hwid) {
         return res.json({ valid: false, message: 'Missing key or HWID' });
     }
 
+    const normalizedKey = normalizeLicenseKey(String(key).trim());
+    if (!normalizedKey || normalizedKey.replace(/-/g, '').length !== 16) {
+        return res.json({ valid: false, message: 'Invalid license key format' });
+    }
+
     const db = await loadDB();
-    const license = db[key];
+    const license = db[normalizedKey];
 
     if (!license) {
         return res.json({ valid: false, message: 'License key not found' });
@@ -559,9 +1354,12 @@ app.post('/api/validate', async (req, res) => {
     }
 
     const now = new Date();
-    const expiresAt = new Date(license.expiresAt);
+    const effectiveExpiresAt = getLicenseExpiresAt(license);
 
-    if (now > expiresAt && license.plan !== 'lifetime') {
+    // Don't check expiry if license is not yet bound (timer hasn't started)
+    if (license.plan !== 'lifetime' && !license.hwid) {
+        // License not bound yet — timer not started, skip expiry check
+    } else if (now > new Date(effectiveExpiresAt) && license.plan !== 'lifetime') {
         return res.json({ valid: false, message: 'License has expired' });
     }
 
@@ -574,12 +1372,50 @@ app.post('/api/validate', async (req, res) => {
 
     if (!license.hwid) {
         license.hwid = hwid;
+        license.boundAt = new Date().toISOString();
+        // Recalculate expiresAt from boundAt if license was not yet bound
+        if (license.plan !== 'lifetime' && !license._expiryStarted) {
+            license._expiryStarted = true;
+            const boundDate = new Date(license.boundAt);
+            let exp;
+
+            // Custom plans use their own duration unit
+            if (license._customDuration) {
+                exp = new Date(boundDate);
+                const { value, unit } = license._customDuration;
+                if (unit === 'minutes') exp.setMinutes(exp.getMinutes() + value);
+                else if (unit === 'hours') exp.setHours(exp.getHours() + value);
+                else if (unit === 'days') exp.setDate(exp.getDate() + value);
+                else if (unit === 'weeks') exp.setDate(exp.getDate() + value * 7);
+                else if (unit === 'months') exp.setMonth(exp.getMonth() + value);
+                else if (unit === 'years') exp.setFullYear(exp.getFullYear() + value);
+                else exp.setMinutes(exp.getMinutes() + value);
+            } else {
+                const durationMonths = license.pendingDurationMonths || 1;
+                exp = new Date(boundDate);
+                exp.setMonth(exp.getMonth() + durationMonths);
+            }
+            license.expiresAt = exp.toISOString();
+
+            // Also recalculate per-spec expiry dates
+            if (license.plan === 'monthly_per_spec' && Array.isArray(license.specs)) {
+                const specExp = new Date(boundDate);
+                const durationMonths = license.pendingDurationMonths || 1;
+                specExp.setMonth(specExp.getMonth() + durationMonths);
+                license.specs = normalizeSpecs(license.specs).map(s => ({
+                    ...s,
+                    addedAt: boundDate.toISOString(),
+                    expiresAt: specExp.toISOString(),
+                }));
+            }
+        }
         await saveDB({ ...db, [key]: license });
         return res.json({
             valid: true,
             plan: license.plan,
             expiresAt: license.expiresAt,
             specs: license.specs || null,
+            activeSpecIds: license.plan === 'monthly_per_spec' ? getActiveSpecIds(license.specs) : null,
             message: 'License successfully activated and bound to this PC',
         });
     }
@@ -593,9 +1429,61 @@ app.post('/api/validate', async (req, res) => {
     return res.json({
         valid: true,
         plan: license.plan,
-        expiresAt: license.expiresAt,
+        expiresAt: effectiveExpiresAt,
         specs: license.specs || null,
+        activeSpecIds: license.plan === 'monthly_per_spec' ? getActiveSpecIds(license.specs) : null,
         message: 'License validated successfully',
+    });
+});
+
+// ── API: Validate license key for add-specs checkout ──
+app.post('/api/license/validate-for-add-specs', async (req, res) => {
+    const rawKey = String(req.body?.key || '').trim().toUpperCase();
+    const normalized = normalizeLicenseKey(rawKey);
+    if (!normalized || normalized.replace(/-/g, '').length !== 16) {
+        return res.status(400).json({ error: 'Invalid license key format.' });
+    }
+
+    const db = await loadDB();
+    const license = db[normalized];
+    if (!license) {
+        return res.status(404).json({ error: 'License key not found.' });
+    }
+    if (!license.active) {
+        return res.status(400).json({ error: 'This license is disabled.', eligible: false });
+    }
+    if (license.plan !== 'monthly_per_spec') {
+        return res.status(400).json({ error: 'Only per-spec licenses support adding specs.', eligible: false });
+    }
+    const now = new Date();
+    // A per-spec key is eligible as long as it has at least one active spec or can add new ones
+    // (even if some specs are expired, the key itself isn't "expired" for add-specs purpose)
+    const allSpecsExpired = license.plan === 'monthly_per_spec' &&
+        Array.isArray(license.specs) &&
+        license.specs.length > 0 &&
+        getActiveSpecIds(license.specs).length === 0;
+    if (allSpecsExpired) {
+        return res.status(400).json({ error: 'All specs on this license have expired. Renew or add new specs.', eligible: false });
+    }
+
+    const specList = normalizeSpecs(license.specs);
+    const activeSpecIds = getActiveSpecIds(license.specs);
+    const expiredSpecIds = getExpiredSpecIds(license.specs);
+    const latestExpiry = getLicenseExpiresAt(license);
+    const isBound = !!license.hwid;
+    const expiryStarted = isBound || !!license._expiryStarted;
+    res.json({
+        eligible: true,
+        key: normalized,
+        plan: license.plan,
+        specs: specList,
+        activeSpecIds,
+        expiredSpecIds,
+        expiresAt: expiryStarted ? latestExpiry : null,
+        expiryStarted,
+        pendingDurationMonths: license.pendingDurationMonths || null,
+        _customDuration: license._customDuration || null,
+        email: license.email || null,
     });
 });
 
@@ -610,22 +1498,35 @@ app.get('/api/status/:key', async (req, res) => {
 
     const cat = loadSpecsCatalog();
     const priceEach = await getActivePrice();
-    const specList = Array.isArray(license.specs) ? license.specs : null;
+    const specList = normalizeSpecs(license.specs);
+    const activeSpecIds = getActiveSpecIds(license.specs);
+    const expiredSpecIds = getExpiredSpecIds(license.specs);
     const monthlyRate =
-        license.plan === 'monthly_per_spec' && specList && specList.length
-            ? specList.length * priceEach
+        license.plan === 'monthly_per_spec' && activeSpecIds.length
+            ? activeSpecIds.length * priceEach
             : null;
+    const effectiveExpiresAt = getLicenseExpiresAt(license);
+
+    const isBound = !!license.hwid;
+    const expiryStarted = isBound || !!license._expiryStarted;
+    const isExpired = license.plan !== 'lifetime' && expiryStarted && new Date() > new Date(effectiveExpiresAt);
 
     res.json({
         plan: license.plan,
         createdAt: license.createdAt,
-        expiresAt: license.expiresAt,
+        boundAt: license.boundAt || null,
+        expiresAt: expiryStarted ? effectiveExpiresAt : null,
+        pendingDurationMonths: license.pendingDurationMonths || null,
+        _customDuration: license._customDuration || null,
+        expiryStarted,
         active: license.active,
-        isBound: !!license.hwid,
-        isExpired: license.plan !== 'lifetime' && new Date() > new Date(license.expiresAt),
+        isBound,
+        isExpired,
         specs: specList,
+        activeSpecIds,
+        expiredSpecIds,
         monthlyRateUsd: monthlyRate,
-        email: license.email || null,
+        // email intentionally omitted — use admin API to view
     });
 });
 
@@ -665,16 +1566,26 @@ app.get('/api/admin/overview', requireAdmin('support'), async (req, res) => {
 });
 
 app.post('/api/admin/config/price', requireAdmin('owner'), async (req, res) => {
-    const price = Number(req.body?.price);
-    if (Number.isNaN(price) || price < 0) {
-        return res.status(400).json({ error: 'Valid price is required' });
+    const { price, priceMonthlyAll, price3MonthAll } = req.body || {};
+    
+    const pSpec = Number(price);
+    const p1m = Number(priceMonthlyAll);
+    const p3m = Number(price3MonthAll);
+
+    if (Number.isNaN(pSpec) || pSpec < 0 || Number.isNaN(p1m) || p1m < 0 || Number.isNaN(p3m) || p3m < 0) {
+        return res.status(400).json({ error: 'Valid prices are required' });
     }
+    
     try {
-        await saveConfig({ pricePerSpecUsdPerMonth: price });
-        auditAdmin(req, 'config.update_price', { price });
-        res.json({ ok: true, price });
+        await saveConfig({ 
+            pricePerSpecUsdPerMonth: pSpec,
+            priceMonthlyAll: p1m,
+            price3MonthAll: p3m
+        });
+        auditAdmin(req, 'config.update_price', { pSpec, p1m, p3m });
+        res.json({ ok: true, price: pSpec, priceMonthlyAll: p1m, price3MonthAll: p3m });
     } catch (e) {
-        res.status(500).json({ error: 'Failed to update price' });
+        res.status(500).json({ error: 'Failed to update configuration' });
     }
 });
 
@@ -685,21 +1596,33 @@ app.get('/api/admin/licenses', requireAdmin('support'), async (req, res) => {
     const db = await loadDB();
     const now = new Date();
 
-    let list = Object.entries(db).map(([key, license]) => ({
-        key,
-        ...license,
-        isExpired: license.plan !== 'lifetime' && new Date(license.expiresAt) <= now,
-        isBound: !!license.hwid,
-    }));
+    let list = Object.entries(db).map(([key, license]) => {
+        const effectiveExpiresAt = getLicenseExpiresAt(license);
+        const isBound = !!license.hwid;
+        const expiryStarted = isBound || !!license._expiryStarted;
+        return {
+            key,
+            ...license,
+            expiresAt: expiryStarted ? effectiveExpiresAt : null,
+            isExpired: license.plan !== 'lifetime' && expiryStarted && new Date(effectiveExpiresAt) <= now,
+            isBound,
+            _expiryStarted: expiryStarted,
+            pendingDurationMonths: license.pendingDurationMonths || null,
+            boundAt: license.boundAt || null,
+        };
+    });
 
     if (q) {
         list = list.filter((l) => {
+            const specIds = Array.isArray(l.specs)
+                ? l.specs.map(s => typeof s === 'object' ? s.id : s).join(',')
+                : '';
             const hay = [
                 l.key,
                 l.plan,
                 l.email || '',
                 l.orderId || '',
-                Array.isArray(l.specs) ? l.specs.join(',') : '',
+                specIds,
             ]
                 .join(' ')
                 .toLowerCase();
@@ -743,34 +1666,33 @@ app.post('/api/admin/licenses/create', requireAdmin('owner'), async (req, res) =
         hwid: null,
         plan: normalizedPlan,
         createdAt: new Date().toISOString(),
-        expiresAt: '2099-12-31T23:59:59.000Z',
+        expiresAt: null, // Timer starts when HWID is bound
+        _expiryStarted: false,
         active: !!active,
         email: email ? String(email).slice(0, 200) : undefined,
     };
 
     if (normalizedPlan === 'custom') {
-        const exp = new Date();
+        // Custom plans: store duration info, timer starts on bind
         const unit = String(durationUnit || 'minutes').toLowerCase();
         const value = Math.max(1, Number(durationValue) || 1);
-        const safeValue = Math.min(525600, value); // hard cap: 1 year if minutes chosen
-
-        if (unit === 'minutes') exp.setMinutes(exp.getMinutes() + safeValue);
-        else if (unit === 'hours') exp.setHours(exp.getHours() + Math.min(24 * 365, safeValue));
-        else if (unit === 'days') exp.setDate(exp.getDate() + Math.min(3650, safeValue));
-        else if (unit === 'weeks') exp.setDate(exp.getDate() + Math.min(520, safeValue) * 7);
-        else if (unit === 'months') exp.setMonth(exp.getMonth() + Math.min(120, safeValue));
-        else if (unit === 'years') exp.setFullYear(exp.getFullYear() + Math.min(20, safeValue));
-        else exp.setMinutes(exp.getMinutes() + safeValue);
-
-        entry.expiresAt = exp.toISOString();
-    } else if (normalizedPlan !== 'lifetime') {
-        const exp = new Date();
+        const safeValue = Math.min(525600, value);
+        entry.pendingDurationMonths = null; // custom uses its own unit
+        entry._customDuration = { value: safeValue, unit };
+        // Don't set expiresAt — timer starts when HWID is bound
+        entry._expiryStarted = false;
+    } else if (normalizedPlan === 'lifetime') {
+        entry.expiresAt = '2099-12-31T23:59:59.000Z';
+        entry._expiryStarted = true;
+    } else {
         const safeMonths = Math.max(1, Math.min(36, Number(months) || 1));
-        exp.setMonth(exp.getMonth() + safeMonths);
-        entry.expiresAt = exp.toISOString();
+        entry.pendingDurationMonths = safeMonths;
+        // expiresAt stays null — will be set when HWID is bound
     }
     if (normalizedPlan === 'monthly_per_spec') {
-        entry.specs = Array.isArray(specs) ? [...new Set(specs.map((s) => String(s)))].slice(0, 64) : [];
+        const specIds = Array.isArray(specs) ? [...new Set(specs.map((s) => String(s)))].slice(0, 64) : [];
+        const nowCreate = new Date().toISOString();
+        entry.specs = specIds.map(id => ({ id, addedAt: nowCreate, expiresAt: null }));
     }
 
     db[key] = entry;
@@ -803,9 +1725,36 @@ app.post('/api/admin/licenses/:key/reset-hwid', requireAdmin('owner'), async (re
     const l = db[key];
     if (!l) return res.status(404).json({ error: 'License not found' });
     l.hwid = null;
+    l.boundAt = null;
+    // Don't reset _expiryStarted or expiresAt — the timer keeps running
+    // The user just needs to re-bind on a new PC, but time already consumed is lost
     await saveDB(db);
     auditAdmin(req, 'license.reset_hwid', { key });
     res.json({ ok: true, key, hwid: null });
+});
+
+app.post('/api/admin/licenses/:key/resend-email', requireAdmin('owner'), async (req, res) => {
+    const key = normalizeLicenseKey(req.params.key);
+    const db = await loadDB();
+    const l = db[key];
+    if (!l) return res.status(404).json({ error: 'License not found' });
+    if (!l.email) return res.status(400).json({ error: 'License has no email address' });
+
+    const result = await sendLicenseEmail({
+        email: l.email,
+        licenseKey: key,
+        plan: l.plan,
+        specs: l.specs || null,
+        expiresAt: l.expiresAt,
+        kind: l.plan,
+    });
+
+    if (result.sent) {
+        auditAdmin(req, 'license.resend_email', { key, email: l.email });
+        res.json({ ok: true, key, email: l.email, messageId: result.messageId });
+    } else {
+        res.status(500).json({ error: 'Failed to send email', reason: result.reason });
+    }
 });
 
 app.post('/api/admin/licenses/:key/extend', requireAdmin('owner'), async (req, res) => {
@@ -817,10 +1766,49 @@ app.post('/api/admin/licenses/:key/extend', requireAdmin('owner'), async (req, r
     if (l.plan === 'lifetime') return res.status(400).json({ error: 'Lifetime licenses do not need extension' });
 
     const now = new Date();
-    const base = new Date(l.expiresAt);
-    const from = Number.isNaN(base.getTime()) || base < now ? now : base;
-    from.setMonth(from.getMonth() + months);
-    l.expiresAt = from.toISOString();
+    const expiryStarted = !!l.hwid || !!l._expiryStarted;
+    if (!expiryStarted) {
+        // License not yet bound — increase pending duration
+        if (l._customDuration) {
+            // Custom plans: add months to the custom duration as months
+            if (l._customDuration.unit === 'months' || l._customDuration.unit === 'years') {
+                l._customDuration.value += (l._customDuration.unit === 'years' ? months : months);
+            } else {
+                // For other units, convert months to approximate days and add
+                const daysToAdd = months * 30;
+                if (l._customDuration.unit === 'days') l._customDuration.value += daysToAdd;
+                else if (l._customDuration.unit === 'weeks') l._customDuration.value += Math.round(daysToAdd / 7);
+                else if (l._customDuration.unit === 'hours') l._customDuration.value += daysToAdd * 24;
+                else if (l._customDuration.unit === 'minutes') l._customDuration.value += daysToAdd * 24 * 60;
+                else l._customDuration.value += daysToAdd;
+            }
+        } else {
+            l.pendingDurationMonths = (l.pendingDurationMonths || 1) + months;
+        }
+    } else {
+        const base = l.expiresAt ? new Date(l.expiresAt) : now;
+        const from = Number.isNaN(base.getTime()) || base < now ? now : base;
+        from.setMonth(from.getMonth() + months);
+        l.expiresAt = from.toISOString();
+    }
+
+    // For per-spec licenses, also extend each spec's expiration
+    if (l.plan === 'monthly_per_spec' && Array.isArray(l.specs)) {
+        const normalized = normalizeSpecs(l.specs);
+        for (const spec of normalized) {
+            if (!expiryStarted) {
+                // Don't set spec expiry if timer hasn't started
+                spec.expiresAt = null;
+            } else {
+                const specBase = spec.expiresAt ? new Date(spec.expiresAt) : null;
+                const specFrom = (!specBase || Number.isNaN(specBase.getTime()) || specBase < now) ? now : specBase;
+                specFrom.setMonth(specFrom.getMonth() + months);
+                spec.expiresAt = specFrom.toISOString();
+            }
+        }
+        l.specs = normalized;
+    }
+
     await saveDB(db);
     auditAdmin(req, 'license.extend', { key, months, expiresAt: l.expiresAt });
     res.json({ ok: true, key, expiresAt: l.expiresAt });
@@ -964,10 +1952,12 @@ async function fulfillPerSpecMonthly(payment, specIds, emailFromPayment) {
     const entry = {
         hwid: null,
         plan: 'monthly_per_spec',
-        specs: specIds,
+        specs: specIds.map(id => ({ id: String(id), addedAt: new Date().toISOString(), expiresAt: null })),
         pricePerSpecUsdPerMonth: priceEach,
         createdAt: new Date().toISOString(),
-        expiresAt: exp.toISOString(),
+        expiresAt: null, // Timer starts when HWID is bound
+        _expiryStarted: false,
+        pendingDurationMonths: 1,
         active: true,
         orderId: payment.order_id,
         npPaymentId: paymentId || undefined,
@@ -1019,18 +2009,19 @@ async function fulfillLegacyPayment(payment) {
 
     let plan = 'monthly';
     let expiresAt;
+    let pendingDurationMonths = 1;
+    let expiryStarted = false;
     if (specsFromOrder && specsFromOrder.length > 0) {
         plan = 'monthly_per_spec';
-        const exp = new Date();
-        exp.setMonth(exp.getMonth() + 1);
-        expiresAt = exp.toISOString();
+        expiresAt = null; // Timer starts on bind
+        pendingDurationMonths = 1;
     } else if (priceAmount > 20) {
         plan = 'lifetime';
         expiresAt = '2099-12-31T23:59:59.000Z';
+        expiryStarted = true;
     } else {
-        const exp = new Date();
-        exp.setMonth(exp.getMonth() + 1);
-        expiresAt = exp.toISOString();
+        expiresAt = null; // Timer starts on bind
+        pendingDurationMonths = 1;
     }
 
     const newKey = generateLicenseKey();
@@ -1039,6 +2030,8 @@ async function fulfillLegacyPayment(payment) {
         plan,
         createdAt: new Date().toISOString(),
         expiresAt,
+        _expiryStarted: expiryStarted,
+        pendingDurationMonths: plan !== 'lifetime' ? pendingDurationMonths : undefined,
         active: true,
         orderId: payment.order_id,
         npPaymentId: paymentId || undefined,
@@ -1051,7 +2044,8 @@ async function fulfillLegacyPayment(payment) {
     };
 
     if (plan === 'monthly_per_spec' && specsFromOrder && specsFromOrder.length > 0) {
-        entry.specs = specsFromOrder;
+        const nowLegacy = new Date().toISOString();
+        entry.specs = specsFromOrder.map(id => ({ id: String(id), addedAt: nowLegacy, expiresAt: null }));
         entry.pricePerSpecUsdPerMonth = priceEach;
     }
 
@@ -1114,12 +2108,21 @@ const webhookParser = express.json({
 app.post('/api/webhook/nowpayments', webhookParser, handleNowpaymentsIpn);
 app.post('/api/webhook/usdt', webhookParser, handleNowpaymentsIpn);
 
-// ── WebSocket Server ──
+// ── WebSocket Server (authenticated) ──
 const server = http.createServer(app);
-const wss = new WebSocketServer({ server, path: '/ws/admin' });
+const wss = new WebSocketServer({ server, path: '/ws/admin', noServer: false });
 
 const wsClients = new Set();
-wss.on('connection', (ws) => {
+wss.on('connection', (ws, req) => {
+    // ── Authenticate via ?token= query param on WS upgrade ──
+    const url = new URL(req.url, 'http://localhost');
+    const provided = String(url.searchParams.get('token') || '').trim();
+    const accounts = getAdminAccounts();
+    const matched = accounts.find(a => a.token === provided);
+    if (!matched) {
+        ws.close(4401, 'Unauthorized');
+        return;
+    }
     wsClients.add(ws);
     ws.on('close', () => wsClients.delete(ws));
     ws.on('error', () => wsClients.delete(ws));

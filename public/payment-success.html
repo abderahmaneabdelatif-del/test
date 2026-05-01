@@ -27,6 +27,8 @@
         (function () {
             const p = new URLSearchParams(location.search);
             const order = p.get('order');
+            const provider = (p.get('provider') || '').toLowerCase();
+            const paypalToken = p.get('token');
             const orderLine = document.getElementById('orderLine');
             const statusLine = document.getElementById('orderStatusLine');
 
@@ -37,6 +39,28 @@
             if (!order) {
                 statusLine.textContent = '';
                 return;
+            }
+
+            async function tryPaypalCapture() {
+                if (provider !== 'paypal' || !paypalToken) return;
+                statusLine.innerHTML = 'Status: <strong>Finalizing PayPal payment...</strong>';
+                try {
+                    const res = await fetch('/api/checkout/paypal/capture', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ paypalOrderId: paypalToken, orderId: order })
+                    });
+                    const data = await res.json().catch(() => ({}));
+                    if (!res.ok) {
+                        statusLine.textContent = data.error || 'PayPal confirmation is still pending.';
+                        return;
+                    }
+                    if (data.licenseKey) {
+                        statusLine.innerHTML = 'Status: <strong>Fulfilled</strong> - Your key is ready: <code>' + data.licenseKey + '</code>';
+                    }
+                } catch (_) {
+                    statusLine.textContent = 'Could not finalize PayPal payment right now.';
+                }
             }
 
             async function refreshStatus() {
@@ -53,13 +77,15 @@
                             : 'Status: <strong>Fulfilled</strong> - Your key is ready in the portal.';
                         return;
                     }
-                    statusLine.innerHTML = 'Status: <strong>Pending confirmation</strong>. Blockchain confirmation can take a few minutes.';
+                    statusLine.innerHTML = provider === 'paypal'
+                        ? 'Status: <strong>Pending confirmation</strong>. PayPal approval is being verified.'
+                        : 'Status: <strong>Pending confirmation</strong>. Blockchain confirmation can take a few minutes.';
                 } catch (_) {
                     statusLine.textContent = 'Could not refresh order status right now.';
                 }
             }
 
-            refreshStatus();
+            tryPaypalCapture().finally(refreshStatus);
             setInterval(refreshStatus, 15000);
         })();
     </script>

@@ -33,6 +33,8 @@ document.addEventListener('DOMContentLoaded', () => {
     const createMsg = document.getElementById('createLicenseMsg');
 
     const configPriceInput = document.getElementById('configPriceInput');
+    const configPlanMonthly = document.getElementById('configPlanMonthly');
+    const configPlan3Month = document.getElementById('configPlan3Month');
     const updateConfigBtn = document.getElementById('updateConfigBtn');
     const updateConfigMsg = document.getElementById('updateConfigMsg');
 
@@ -90,6 +92,7 @@ document.addEventListener('DOMContentLoaded', () => {
     let sessionExpiresAt = 0;
     let confirmResolve = null;
     const specsMap = new Map(); // id -> label
+    let licenseViewMode = localStorage.getItem('adminLicView') || 'table';
 
     const state = {
         orders: { items: [], page: 1, pageSize: 25, sortKey: 'createdAt', sortDir: 'desc' },
@@ -185,6 +188,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const plan = String(createPlan.value || '').toLowerCase();
         const isCustom = plan === 'custom';
         const isLifetime = plan === 'lifetime';
+        const isPerSpec = plan === 'monthly_per_spec';
 
         if (createMonthsLabel) createMonthsLabel.style.display = isCustom ? 'none' : '';
         if (createMonths) createMonths.disabled = isCustom || isLifetime;
@@ -192,6 +196,10 @@ document.addEventListener('DOMContentLoaded', () => {
         if (createCustomDurationLabel) createCustomDurationLabel.style.display = isCustom ? '' : 'none';
         if (createDurationValue) createDurationValue.disabled = !isCustom;
         if (createDurationUnit) createDurationUnit.disabled = !isCustom;
+
+        // Show specs selection only for per-spec plan
+        const specsSection = document.querySelector('.create-specs-section');
+        if (specsSection) specsSection.style.display = isPerSpec ? '' : 'none';
     }
 
     function statusBadge(status) {
@@ -215,7 +223,6 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!sessionLine) return;
         sessionLine.innerHTML = `Signed in as <strong>${esc(currentName)}</strong> (${esc(currentRole)})`;
         if (createBtn) createBtn.disabled = !canWrite();
-        if (clearAuditBtn) clearAuditBtn.disabled = !canWrite();
     }
 
     function markRefreshedNow() {
@@ -380,87 +387,138 @@ document.addEventListener('DOMContentLoaded', () => {
         if (ordersPrev) ordersPrev.disabled = cur <= 1;
         if (ordersNext) ordersNext.disabled = cur >= totalPages;
 
+        // Quick stats
+        const pendingCount = items.filter(o => String(o.status || 'pending') !== 'fulfilled').length;
+        const fulfilledCount = items.filter(o => String(o.status || '') === 'fulfilled').length;
+        const ordPendingEl = document.getElementById('ordPendingCount');
+        const ordFulfilledEl = document.getElementById('ordFulfilledCount');
+        const ordPagerInfo = document.getElementById('ordPagerInfo');
+        if (ordPendingEl) ordPendingEl.textContent = pendingCount;
+        if (ordFulfilledEl) ordFulfilledEl.textContent = fulfilledCount;
+        if (ordPagerInfo) {
+            const from = sorted.length ? (cur - 1) * pageSize + 1 : 0;
+            const to = Math.min(cur * pageSize, sorted.length);
+            ordPagerInfo.textContent = `Showing ${from}–${to} of ${sorted.length} orders`;
+        }
+
         if (!slice.length) {
             ordersList.innerHTML = '<div class="admin-empty">No orders found.</div>';
             return;
         }
 
-        ordersList.innerHTML = slice
-            .map((o) => {
-                const selected =
-                    Array.isArray(o.specLabels) && o.specLabels.length
-                        ? o.specLabels.join(', ')
-                        : Array.isArray(o.specIds) && o.specIds.length
-                        ? o.specIds.join(', ')
-                        : '-';
-                const selectedList =
-                    Array.isArray(o.specLabels) && o.specLabels.length
-                        ? o.specLabels
-                        : Array.isArray(o.specIds) && o.specIds.length
-                        ? o.specIds
-                        : [];
-                const chips = selectedList
-                    .slice(0, 4)
-                    .map((x) => `<span class="admin-chip">${esc(x)}</span>`)
-                    .join('');
-                const more =
-                    selectedList.length > 4
-                        ? `<span class="admin-chip admin-chip--muted">+${selectedList.length - 4}</span>`
-                        : '';
-                const selectedCell =
-                    selectedList.length === 0
-                        ? '<span class="admin-truncate">-</span>'
-                        : `<div class="admin-chips" title="${esc(selected)}">${chips}${more}</div>`;
-
-                const amountText =
-                    o.amountUsd != null && !Number.isNaN(Number(o.amountUsd))
+        const w = canWrite();
+        const rows = slice.map(o => {
+            const status = String(o.status || 'pending').toLowerCase();
+            const isPending = status !== 'fulfilled';
+            const checked = selectedOrders.has(String(o.orderId || '')) ? 'checked' : '';
+            const amountText = o.amountUsd != null && !Number.isNaN(Number(o.amountUsd))
                         ? `$${Number(o.amountUsd).toFixed(2)}`
                         : '-';
                 const currencyText = o.currency ? ` ${esc(o.currency)}` : '';
-                const email = o.email ? esc(o.email) : '-';
-                const checked = selectedOrders.has(String(o.orderId || '')) ? 'checked' : '';
-                const orderIdSafe = String(o.orderId || '-');
-                const emailSafe = email;
-                const licenseSafe = o.licenseKey ? o.licenseKey : '-';
+            const email = o.email ? esc(o.email) : '';
+            const licenseKey = o.licenseKey ? esc(o.licenseKey) : '';
+            const kind = o.kind || '-';
+            const provider = o.provider || (o.paypalOrderId ? 'PayPal' : o.npPaymentId ? 'NOWPayments' : '—');
 
-                return `<details class="admin-item" data-order="${esc(o.orderId || '')}">
-                    <summary class="admin-item-summary">
-                        <div class="admin-item-left">
-                            <div class="admin-item-title"><code>${highlight(orderIdSafe, q)}</code></div>
-                            <div class="admin-item-sub">${esc(fmtDate(o.createdAt))} · ${amountText}${currencyText}</div>
+            // Specs summary
+            const specLabels = Array.isArray(o.specLabels) && o.specLabels.length
+                ? o.specLabels : Array.isArray(o.specIds) && o.specIds.length
+                ? o.specIds : [];
+            let specsCell = '';
+            if (specLabels.length > 0) {
+                const chips = specLabels.slice(0, 2).map(x => `<span class="ot-spec">${esc(x)}</span>`).join('');
+                const more = specLabels.length > 2 ? `<span class="ot-spec ot-spec--more">+${specLabels.length - 2}</span>` : '';
+                specsCell = chips + more;
+            } else {
+                specsCell = '<span class="ot-spec ot-spec--none">—</span>';
+            }
+
+            const statusCls = isPending ? 'warn' : 'ok';
+            const rowCls = isPending ? 'ot-row--pending' : '';
+
+            // Expand detail
+            const detailFields = [
+                { label: 'Kind', value: esc(kind) },
+                { label: 'Provider', value: esc(provider) },
+                { label: 'Email', value: email || '—' },
+                { label: 'License Key', value: licenseKey ? `<code class="ot-detail-code">${licenseKey}</code>` : '—' },
+                { label: 'Specs', value: specLabels.length ? specLabels.map(x => `<span class="ot-detail-spec">${esc(x)}</span>`).join(' ') : '—' },
+                { label: 'Created', value: fmtDate(o.createdAt) },
+                { label: 'Fulfilled At', value: o.fulfilledAt ? fmtDate(o.fulfilledAt) : '—' },
+            ];
+            const detailHtml = `<div class="ot-expand">
+                <div class="ot-detail-grid">
+                    ${detailFields.map(f => `<div class="ot-detail-field">
+                        <span class="ot-detail-label">${f.label}</span>
+                        <span class="ot-detail-value">${f.value}</span>
+                    </div>`).join('')}
                         </div>
-                        <div class="admin-item-right">
-                            ${statusBadge(o.status || 'pending')}
+                <div class="ot-detail-actions">
+                    <label class="ot-detail-check"><input type="checkbox" class="admin-row-check" data-order-check="${esc(o.orderId || '')}" ${checked}> Select</label>
+                    <button class="ot-detail-delete admin-action-btn admin-danger" data-act="delete-order" ${w ? '' : 'disabled'}>Delete</button>
                         </div>
-                    </summary>
-                    <div class="admin-item-body">
-                        <div class="admin-item-grid">
-                            <div class="admin-item-field">
-                                <div class="admin-item-label">Selected</div>
-                                <div class="admin-item-value">${selectedCell}</div>
-                            </div>
-                            <div class="admin-item-field">
-                                <div class="admin-item-label">Email</div>
-                                <div class="admin-item-value"><span class="admin-truncate" title="${esc(emailSafe)}">${highlight(emailSafe, q)}</span></div>
-                            </div>
-                            <div class="admin-item-field">
-                                <div class="admin-item-label">License</div>
-                                <div class="admin-item-value">${o.licenseKey ? `<code>${highlight(licenseSafe, q)}</code>` : '-'}</div>
-                            </div>
-                            <div class="admin-item-field admin-item-field--actions">
-                                <div class="admin-item-label">Actions</div>
-                                <div class="admin-item-value">
-                                    <div class="admin-actions">
-                                        <label class="admin-multi-check"><input type="checkbox" class="admin-row-check" data-order-check="${esc(o.orderId || '')}" ${checked}> Select</label>
-                                        <button class="btn-action admin-action-btn admin-danger" data-act="delete-order" ${canWrite() ? '' : 'disabled'}>Delete</button>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                </details>`;
-            })
-            .join('');
+            </div>`;
+
+            return `<tr class="ot-row ${rowCls}" data-order="${esc(o.orderId || '')}">
+                <td class="ot-cell ot-cell--check"><input type="checkbox" class="admin-row-check" data-order-check="${esc(o.orderId || '')}" ${checked}></td>
+                <td class="ot-cell ot-cell--id"><code class="ot-id-code">${highlight(String(o.orderId || '-'), q)}</code></td>
+                <td class="ot-cell ot-cell--amount"><span class="ot-amount">${amountText}</span><span class="ot-currency">${currencyText}</span></td>
+                <td class="ot-cell ot-cell--specs"><div class="ot-specs-wrap">${specsCell}</div></td>
+                <td class="ot-cell ot-cell--email">${email ? `<span class="ot-email" title="${esc(email)}">${highlight(email.length > 16 ? email.substring(0, 16) + '…' : email, q)}</span>` : '<span class="ot-email--none">—</span>'}</td>
+                <td class="ot-cell ot-cell--license">${licenseKey ? `<code class="ot-license-code">${highlight(licenseKey, q)}</code>` : '<span class="ot-license--none">—</span>'}</td>
+                <td class="ot-cell ot-cell--date">${fmtDate(o.createdAt)}</td>
+                <td class="ot-cell ot-cell--status"><span class="admin-pill ${statusCls}">${esc(isPending ? 'Pending' : 'Fulfilled')}</span></td>
+                <td class="ot-cell ot-cell--actions">
+                    <button class="ot-expand-btn" data-ot-expand="${esc(o.orderId || '')}" title="Details">▼</button>
+                </td>
+            </tr>
+            <tr class="ot-expand-row" data-ot-expand-parent="${esc(o.orderId || '')}" hidden><td colspan="9" class="ot-expand-cell">${detailHtml}</td></tr>`;
+        }).join('');
+
+        ordersList.innerHTML = `<div class="ot-container"><table class="ot-table">
+            <thead><tr>
+                <th class="ot-th ot-th--check"><input type="checkbox" class="ot-check-all" title="Select all"></th>
+                <th class="ot-th ot-th--id">Order ID</th>
+                <th class="ot-th ot-th--amount">Amount</th>
+                <th class="ot-th ot-th--specs">Specs</th>
+                <th class="ot-th ot-th--email">Email</th>
+                <th class="ot-th ot-th--license">License</th>
+                <th class="ot-th ot-th--date">Date</th>
+                <th class="ot-th ot-th--status">Status</th>
+                <th class="ot-th ot-th--actions"></th>
+            </tr></thead>
+            <tbody>${rows}</tbody>
+        </table></div>`;
+
+        // Expand toggle
+        ordersList.querySelectorAll('.ot-expand-btn').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                const id = btn.dataset.otExpand;
+                const row = ordersList.querySelector(`tr[data-ot-expand-parent="${id}"]`);
+                if (row) {
+                    const isHidden = row.hidden;
+                    row.hidden = !isHidden;
+                    btn.textContent = isHidden ? '▲' : '▼';
+                    btn.classList.toggle('is-open', isHidden);
+                }
+            });
+        });
+
+        // Select all
+        const checkAll = ordersList.querySelector('.ot-check-all');
+        if (checkAll) {
+            checkAll.addEventListener('change', () => {
+                const checked = checkAll.checked;
+                ordersList.querySelectorAll('.ot-row .admin-row-check').forEach(cb => {
+                    cb.checked = checked;
+                    const id = cb.dataset.orderCheck;
+                    if (id) { if (checked) selectedOrders.add(id); else selectedOrders.delete(id); }
+                });
+                updateBulkButtons();
+            });
+        }
+
         updateBulkButtons();
     }
 
@@ -477,12 +535,17 @@ document.addEventListener('DOMContentLoaded', () => {
     function licenseStatusText(l) {
         if (!l.active) return 'disabled';
         if (l.isExpired) return 'expired';
+        if (!l.isBound && !l._expiryStarted && l.plan !== 'lifetime') return 'unbound';
         return 'active';
     }
 
     function getLicenseSortValue(l, key) {
         if (key === 'status') return licenseStatusText(l);
-        if (key === 'specs') return Array.isArray(l.specs) ? l.specs.join(', ') : '';
+        if (key === 'specs') {
+            const specList = Array.isArray(l.specs) ? l.specs : [];
+            // Handle both old string format and new object format
+            return specList.map(s => typeof s === 'object' ? s.id : s).join(', ');
+        }
         if (key === 'expiresAt') return l.plan === 'lifetime' ? '2099-12-31' : l.expiresAt || '';
         return l[key];
     }
@@ -513,7 +576,7 @@ document.addEventListener('DOMContentLoaded', () => {
         // Quick stats
         const activeCount = items.filter(l => l.active && !l.isExpired).length;
         const expiringCount = items.filter(l => {
-            if (!l.active || l.plan === 'lifetime') return false;
+            if (!l.active || l.plan === 'lifetime' || !l.expiresAt) return false;
             const ms = new Date(l.expiresAt).getTime() - Date.now();
             return ms > 0 && ms <= 7 * 24 * 60 * 60 * 1000;
         }).length;
@@ -536,158 +599,11 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
 
-        licensesList.innerHTML = slice
-            .map((l) => {
-                const specList = Array.isArray(l.specs) ? l.specs : [];
-                const specLabels = specList.map(id => specsMap.get(id) || id);
-                const specsText = specLabels.length ? specLabels.join(', ') : '-';
-                const email = l.email ? esc(l.email) : '';
-                const emailDisplay = email || 'No email';
-                const exp = l.plan === 'lifetime' ? 'Never' : fmtDate(l.expiresAt);
-                const status = licenseStatusText(l);
-                const checked = selectedLicenses.has(String(l.key || '')) ? 'checked' : '';
-                const w = canWrite();
-
-                // Plan badge colors
-                const planColors = {
-                    monthly: 'plan-monthly',
-                    monthly_per_spec: 'plan-spec',
-                    lifetime: 'plan-lifetime',
-                    custom: 'plan-custom',
-                };
-                const planCls = planColors[l.plan] || 'plan-custom';
-                const planLabel = {
-                    monthly: 'Monthly',
-                    monthly_per_spec: 'Per Spec',
-                    lifetime: 'Lifetime',
-                    custom: 'Custom',
-                }[l.plan] || (l.plan || 'Unknown');
-
-                // Expiry progress bar (0-100%)
-                let expiryBar = '';
-                let expiryPct = 100;
-                if (l.plan !== 'lifetime' && l.expiresAt && l.createdAt) {
-                    const total = new Date(l.expiresAt) - new Date(l.createdAt);
-                    const remaining = new Date(l.expiresAt) - Date.now();
-                    expiryPct = Math.max(0, Math.min(100, Math.round((remaining / total) * 100)));
-                    const barCls = expiryPct < 20 ? 'bar-danger' : expiryPct < 50 ? 'bar-warn' : 'bar-ok';
-                    expiryBar = `
-                        <div class="lic-card-expiry">
-                            <div class="lic-expiry-bar">
-                                <div class="lic-expiry-fill ${barCls}" style="width:${expiryPct}%"></div>
-                            </div>
-                            <span class="lic-expiry-label">${exp}</span>
-                        </div>`;
-                } else if (l.plan === 'lifetime') {
-                    expiryBar = `
-                        <div class="lic-card-expiry">
-                            <div class="lic-expiry-bar">
-                                <div class="lic-expiry-fill bar-lifetime" style="width:100%"></div>
-                            </div>
-                            <span class="lic-expiry-label">Never expires</span>
-                        </div>`;
-                }
-
-                // Spec chips (max 4)
-                const specChipsHtml = specLabels.length
-                    ? specLabels.slice(0, 4).map(x =>
-                        `<span class="lic-spec-chip">${esc(x)}</span>`
-                      ).join('') + (specLabels.length > 4
-                        ? `<span class="lic-spec-chip lic-spec-more">+${specLabels.length - 4}</span>`
-                        : '')
-                    : '<span class="lic-spec-chip lic-spec-none">All Specs</span>';
-
-                // Timeline HTML removed as audit is removed
-                const timelineHtml = '<div class="lic-timeline-empty">History unavailable</div>';
-
-                // HWID bound indicator
-                const boundBadge = l.isBound
-                    ? `<span class="lic-bound-badge is-bound">
-                           <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10 13a5 5 0 007.54.54l3-3a5 5 0 00-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 00-7.54-.54l-3 3a5 5 0 007.07 7.07l1.71-1.71"/></svg>
-                           Bound
-                       </span>`
-                    : `<span class="lic-bound-badge is-unbound">
-                           <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10 13a5 5 0 007.54.54l3-3a5 5 0 00-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 00-7.54-.54l-3 3a5 5 0 007.07 7.07l1.71-1.71"/></svg>
-                           Unbound
-                       </span>`;
-
-                // Avatar initials from email
-                const initials = email
-                    ? email.substring(0, 2).toUpperCase()
-                    : (l.plan || '?').substring(0, 2).toUpperCase();
-
-                // Status indicator class
-                const statusCls = status === 'active' ? 'status-ok' : status === 'disabled' ? 'status-bad' : 'status-warn';
-
-                return `<div class="lic-card ${statusCls === 'status-bad' ? 'lic-card--disabled' : ''}" data-key="${esc(l.key)}">
-                    <!-- Card Header -->
-                    <div class="lic-card-header">
-                        <div class="lic-card-header-left">
-                            <div class="lic-card-check">
-                                <input type="checkbox" class="lic-check-input admin-row-check"
-                                    data-license-check="${esc(l.key)}" ${checked}
-                                    id="lic-cb-${esc(l.key)}">
-                                <label class="lic-check-label" for="lic-cb-${esc(l.key)}"></label>
-                            </div>
-                            <div class="lic-avatar">${esc(initials)}</div>
-                            <div class="lic-card-identity">
-                                <div class="lic-card-key">
-                                    <code class="lic-key-code">${highlight(l.key, q)}</code>
-                                    <button class="lic-copy-btn" data-copy="${esc(l.key)}" title="Copy key">
-                                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>
-                                    </button>
-                                </div>
-                                <div class="lic-card-meta">
-                                    ${email
-                                        ? `<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
-                                         <span>${highlight(emailDisplay, q)}</span>`
-                                        : `<span style="color:var(--adm-text-3)">No email</span>`}
-                                </div>
-                            </div>
-                        </div>
-                        <div class="lic-card-header-right">
-                            <span class="lic-plan-badge ${planCls}">${esc(planLabel)}</span>
-                            ${boundBadge}
-                            <div class="lic-status-dot ${statusCls}" title="${esc(status)}"></div>
-                            <span class="admin-pill ${status === 'active' ? 'ok' : status === 'disabled' ? 'bad' : 'warn'}">${esc(status)}</span>
-                        </div>
-                    </div>
-
-                    <!-- Specs Row -->
-                    <div class="lic-card-specs">
-                        <span class="lic-specs-label">Specs</span>
-                        <div class="lic-spec-chips">${specChipsHtml}</div>
-                    </div>
-
-                    <!-- Expiry Bar -->
-                    ${expiryBar}
-
-                    <!-- Action buttons + Expand toggle -->
-                    <div class="lic-card-footer">
-                        <div class="lic-card-actions">
-                            <button class="lic-action-btn" data-act="toggle" title="Toggle active" ${w ? '' : 'disabled'}>
-                                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="1" y="5" width="22" height="14" rx="7"/><circle cx="${l.active ? '16' : '8'}" cy="12" r="3"/></svg>
-                                Toggle
-                            </button>
-                            <button class="lic-action-btn" data-act="extend" title="+1 month" ${w ? '' : 'disabled'}>
-                                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
-                                +1 Month
-                            </button>
-                            <button class="lic-action-btn" data-act="reset" title="Reset HWID" ${w ? '' : 'disabled'}>
-                                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 102.13-9.36L1 10"/></svg>
-                                Reset HWID
-                            </button>
-                            <button class="lic-action-btn lic-action-danger" data-act="delete" title="Delete" ${w ? '' : 'disabled'}>
-                                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg>
-                                Delete
-                            </button>
-                        </div>
-                    </div>
-
-                    <!-- Timeline removed -->
-                </div>`;
-            })
-            .join('');
+        if (licenseViewMode === 'table') {
+            renderLicensesTable(slice, q);
+        } else {
+            renderLicensesCards(slice, q);
+        }
 
         // Copy key buttons
         licensesList.querySelectorAll('.lic-copy-btn').forEach(btn => {
@@ -704,6 +620,286 @@ document.addEventListener('DOMContentLoaded', () => {
         });
 
         updateBulkButtons();
+    }
+
+    function renderLicensesTable(slice, q) {
+        const w = canWrite();
+        const now = Date.now();
+        const rows = slice.map(l => {
+            const status = licenseStatusText(l);
+            const checked = selectedLicenses.has(String(l.key || '')) ? 'checked' : '';
+                const specList = Array.isArray(l.specs) ? l.specs : [];
+            const specEntries = specList.map(s => {
+                if (typeof s === 'string') return { id: s, label: specsMap.get(s) || s, expiresAt: null, isExpired: false };
+                const id = String(s.id || '');
+                const exp = s.expiresAt ? new Date(s.expiresAt) : null;
+                const isExpired = exp ? exp.getTime() <= now : false;
+                return { id, label: specsMap.get(id) || id, expiresAt: s.expiresAt, isExpired, addedAt: s.addedAt };
+            });
+            const activeSpecs = specEntries.filter(s => !s.isExpired);
+            const expiredSpecs = specEntries.filter(s => s.isExpired);
+            const email = l.email ? esc(l.email) : '';
+            const isBound = !!l.isBound;
+            const expiryStarted = isBound || !!l._expiryStarted;
+            const timerNotStarted = !expiryStarted && l.plan !== 'lifetime';
+            let pendingLabel;
+            if (l._customDuration) {
+                const { value, unit } = l._customDuration;
+                pendingLabel = `${value}${unit.charAt(0)}`;
+            } else {
+                pendingLabel = `${l.pendingDurationMonths || 1}mo`;
+            }
+            const exp = l.plan === 'lifetime' ? 'Never' : timerNotStarted ? `Pending (${pendingLabel} on bind)` : fmtDate(l.expiresAt);
+            const planLabel = { monthly: 'Monthly', monthly_per_spec: 'Per Spec', lifetime: 'Lifetime', custom: 'Custom' }[l.plan] || l.plan || 'Unknown';
+            const planCls = { monthly: 'plan-monthly', monthly_per_spec: 'plan-spec', lifetime: 'plan-lifetime', custom: 'plan-custom' }[l.plan] || 'plan-custom';
+            const statusCls = status === 'active' ? 'ok' : status === 'disabled' ? 'bad' : status === 'unbound' ? 'unbound' : 'warn';
+            const boundIcon = l.isBound ? '🔗' : '—';
+
+            // Specs summary for table
+            let specsCell = '';
+            if (l.plan === 'monthly_per_spec') {
+                const activeChips = activeSpecs.slice(0, 2).map(x => `<span class="lt-spec lt-spec--active">${esc(x.label)}</span>`).join('');
+                const expiredChips = expiredSpecs.slice(0, 1).map(x => `<span class="lt-spec lt-spec--expired">${esc(x.label)}</span>`).join('');
+                const moreActive = activeSpecs.length > 2 ? `<span class="lt-spec lt-spec--more">+${activeSpecs.length - 2}</span>` : '';
+                const moreExpired = expiredSpecs.length > 1 ? `<span class="lt-spec lt-spec--more lt-spec--expired-more">+${expiredSpecs.length - 1} exp</span>` : '';
+                specsCell = activeChips + moreActive + expiredChips + moreExpired;
+                if (!specEntries.length) specsCell = '<span class="lt-spec lt-spec--none">None</span>';
+            } else {
+                specsCell = '<span class="lt-spec lt-spec--all">All</span>';
+            }
+
+            // Expand detail for per-spec
+            let expandHtml = '';
+            if (l.plan === 'monthly_per_spec' && specEntries.length > 0) {
+                const detailRows = specEntries.map(s => {
+                    const expDate = s.expiresAt ? new Date(s.expiresAt) : null;
+                    const isExpired = s.isExpired;
+                    const daysLeft = expDate && !isExpired ? Math.max(0, Math.ceil((expDate - now) / 86400000)) : 0;
+                    const rowCls = isExpired ? 'lt-detail-row--expired' : 'lt-detail-row--active';
+                    const icon = isExpired
+                        ? `<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#ff6464" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>`
+                        : `<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#00DDB3" stroke-width="2"><path d="M22 11.08V12a10 10 0 11-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>`;
+                    const expText = isExpired ? 'Expired' : s.expiresAt ? `${expDate.toLocaleDateString()} (${daysLeft}d)` : 'Pending (bind to start)';
+                    const miniPct = isExpired ? 0 : s.expiresAt && s.addedAt
+                        ? Math.max(0, Math.min(100, Math.round(((expDate - now) / (expDate - new Date(s.addedAt))) * 100)))
+                        : 100;
+                    const miniCls = miniPct < 20 ? 'lt-mini--danger' : miniPct < 50 ? 'lt-mini--warn' : 'lt-mini--ok';
+                    return `<div class="lt-detail-row ${rowCls}">
+                        <span class="lt-detail-icon">${icon}</span>
+                        <span class="lt-detail-label">${esc(s.label)}</span>
+                        <span class="lt-detail-exp">${expText}</span>
+                        <div class="lt-mini-bar"><div class="lt-mini-fill ${miniCls}" style="width:${miniPct}%"></div></div>
+                    </div>`;
+                }).join('');
+                expandHtml = `<div class="lt-expand" data-expand-key="${esc(l.key)}">
+                    <div class="lt-expand-header">
+                        <span>${activeSpecs.length} active</span>
+                        ${expiredSpecs.length > 0 ? `<span class="lt-expand-expired">${expiredSpecs.length} expired</span>` : ''}
+                    </div>
+                    ${detailRows}
+                </div>`;
+            }
+
+            return `<tr class="lt-row ${status === 'disabled' ? 'lt-row--disabled' : status === 'expired' ? 'lt-row--expired' : ''}" data-key="${esc(l.key)}">
+                <td class="lt-cell lt-cell--check"><input type="checkbox" class="admin-row-check" data-license-check="${esc(l.key)}" ${checked}></td>
+                <td class="lt-cell lt-cell--key">
+                    <div class="lt-key-wrap">
+                        <code class="lt-key-code">${highlight(l.key, q)}</code>
+                        <button class="lic-copy-btn" data-copy="${esc(l.key)}" title="Copy">
+                            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>
+                        </button>
+                    </div>
+                </td>
+                <td class="lt-cell lt-cell--email">${email ? `<span class="lt-email" title="${esc(email)}">${highlight(email.length > 18 ? email.substring(0, 18) + '…' : email, q)}</span>` : '<span class="lt-email--none">—</span>'}</td>
+                <td class="lt-cell lt-cell--plan"><span class="lic-plan-badge ${planCls} lt-plan-badge">${esc(planLabel)}</span></td>
+                <td class="lt-cell lt-cell--specs"><div class="lt-specs-wrap">${specsCell}</div></td>
+                <td class="lt-cell lt-cell--expiry">${l.plan === 'lifetime' ? '<span class="lt-never">∞ Never</span>' : `<span class="lt-expiry ${statusCls === 'warn' ? 'lt-expiry--expired' : ''}">${exp}</span>`}</td>
+                <td class="lt-cell lt-cell--hwid">${l.isBound ? '<span class="lt-bound" title="HWID bound">🔗</span>' : '<span class="lt-unbound">—</span>'}</td>
+                <td class="lt-cell lt-cell--status"><span class="admin-pill ${statusCls}">${esc(status)}</span></td>
+                <td class="lt-cell lt-cell--actions">
+                    <div class="lt-actions">
+                        <button class="lt-act-btn" data-act="toggle" title="Toggle" ${w ? '' : 'disabled'}>⏻</button>
+                        <button class="lt-act-btn" data-act="extend" title="+1 month" ${w ? '' : 'disabled'}>⏱</button>
+                        <button class="lt-act-btn" data-act="reset" title="Reset HWID" ${w ? '' : 'disabled'}>↺</button>
+                        <button class="lt-act-btn lt-act-btn--danger" data-act="delete" title="Delete" ${w ? '' : 'disabled'}>✕</button>
+                        <button class="lt-act-btn" data-act="resend-email" title="Resend Email" ${w ? '' : 'disabled'}>✉</button>
+                        ${expandHtml ? `<button class="lt-act-btn lt-expand-toggle" data-expand="${esc(l.key)}" title="Details">▼</button>` : ''}
+                    </div>
+                </td>
+            </tr>
+            ${expandHtml ? `<tr class="lt-expand-row" data-expand-parent="${esc(l.key)}" hidden><td colspan="9" class="lt-expand-cell">${expandHtml}</td></tr>` : ''}`;
+        }).join('');
+
+        licensesList.innerHTML = `<div class="lt-container"><table class="lt-table">
+            <thead><tr>
+                <th class="lt-th lt-th--check"><input type="checkbox" class="lt-check-all" title="Select all"></th>
+                <th class="lt-th lt-th--key">Key</th>
+                <th class="lt-th lt-th--email">Email</th>
+                <th class="lt-th lt-th--plan">Plan</th>
+                <th class="lt-th lt-th--specs">Specs</th>
+                <th class="lt-th lt-th--expiry">Expires</th>
+                <th class="lt-th lt-th--hwid">HWID</th>
+                <th class="lt-th lt-th--status">Status</th>
+                <th class="lt-th lt-th--actions">Actions</th>
+            </tr></thead>
+            <tbody>${rows}</tbody>
+        </table></div>`;
+
+        // Expand toggle
+        licensesList.querySelectorAll('.lt-expand-toggle').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                const key = btn.dataset.expand;
+                const row = licensesList.querySelector(`tr[data-expand-parent="${key}"]`);
+                if (row) {
+                    const isHidden = row.hidden;
+                    row.hidden = !isHidden;
+                    btn.textContent = isHidden ? '▲' : '▼';
+                    btn.classList.toggle('is-open', isHidden);
+                }
+            });
+        });
+
+        // Select all checkbox
+        const checkAll = licensesList.querySelector('.lt-check-all');
+        if (checkAll) {
+            checkAll.addEventListener('change', () => {
+                const checked = checkAll.checked;
+                licensesList.querySelectorAll('.lt-row .admin-row-check').forEach(cb => {
+                    cb.checked = checked;
+                    const key = cb.dataset.licenseCheck;
+                    if (key) { if (checked) selectedLicenses.add(key); else selectedLicenses.delete(key); }
+                });
+                updateBulkButtons();
+            });
+        }
+    }
+
+    function renderLicensesCards(slice, q) {
+        const now = Date.now();
+        const w = canWrite();
+        licensesList.innerHTML = slice.map((l) => {
+            const specList = Array.isArray(l.specs) ? l.specs : [];
+            const specEntries = specList.map(s => {
+                if (typeof s === 'string') return { id: s, label: specsMap.get(s) || s, expiresAt: null, isExpired: false };
+                const id = String(s.id || '');
+                const exp = s.expiresAt ? new Date(s.expiresAt) : null;
+                const isExpired = exp ? exp.getTime() <= now : false;
+                return { id, label: specsMap.get(id) || id, expiresAt: s.expiresAt, isExpired, addedAt: s.addedAt };
+            });
+            const activeSpecs = specEntries.filter(s => !s.isExpired);
+            const expiredSpecs = specEntries.filter(s => s.isExpired);
+                const email = l.email ? esc(l.email) : '';
+                const emailDisplay = email || 'No email';
+            const isBound = !!l.isBound;
+            const expiryStarted = isBound || !!l._expiryStarted;
+            const timerNotStarted = !expiryStarted && l.plan !== 'lifetime';
+            let pendingLabel;
+            if (l._customDuration) {
+                const { value, unit } = l._customDuration;
+                pendingLabel = `${value}${unit.charAt(0)}`;
+            } else {
+                pendingLabel = `${l.pendingDurationMonths || 1}mo`;
+            }
+            const exp = l.plan === 'lifetime' ? 'Never' : timerNotStarted ? `Timer pending (${pendingLabel} on bind)` : fmtDate(l.expiresAt);
+                const status = licenseStatusText(l);
+                const checked = selectedLicenses.has(String(l.key || '')) ? 'checked' : '';
+            const planColors = { monthly: 'plan-monthly', monthly_per_spec: 'plan-spec', lifetime: 'plan-lifetime', custom: 'plan-custom' };
+                const planCls = planColors[l.plan] || 'plan-custom';
+            const planLabel = { monthly: 'Monthly', monthly_per_spec: 'Per Spec', lifetime: 'Lifetime', custom: 'Custom' }[l.plan] || (l.plan || 'Unknown');
+                let expiryBar = '';
+            if (timerNotStarted) {
+                expiryBar = `<div class="lic-card-expiry"><div class="lic-expiry-bar"><div class="lic-expiry-fill bar-pending" style="width:100%"></div></div><span class="lic-expiry-label">${exp}</span></div>`;
+            } else if (l.plan !== 'lifetime' && l.expiresAt && l.boundAt) {
+                const total = new Date(l.expiresAt) - new Date(l.boundAt);
+                const remaining = new Date(l.expiresAt) - Date.now();
+                const expiryPct = Math.max(0, Math.min(100, Math.round((remaining / total) * 100)));
+                const barCls = expiryPct < 20 ? 'bar-danger' : expiryPct < 50 ? 'bar-warn' : 'bar-ok';
+                expiryBar = `<div class="lic-card-expiry"><div class="lic-expiry-bar"><div class="lic-expiry-fill ${barCls}" style="width:${expiryPct}%"></div></div><span class="lic-expiry-label">${exp}</span></div>`;
+            } else if (l.plan !== 'lifetime' && l.expiresAt && l.createdAt) {
+                    const total = new Date(l.expiresAt) - new Date(l.createdAt);
+                    const remaining = new Date(l.expiresAt) - Date.now();
+                const expiryPct = Math.max(0, Math.min(100, Math.round((remaining / total) * 100)));
+                    const barCls = expiryPct < 20 ? 'bar-danger' : expiryPct < 50 ? 'bar-warn' : 'bar-ok';
+                expiryBar = `<div class="lic-card-expiry"><div class="lic-expiry-bar"><div class="lic-expiry-fill ${barCls}" style="width:${expiryPct}%"></div></div><span class="lic-expiry-label">${exp}</span></div>`;
+                } else if (l.plan === 'lifetime') {
+                expiryBar = `<div class="lic-card-expiry"><div class="lic-expiry-bar"><div class="lic-expiry-fill bar-lifetime" style="width:100%"></div></div><span class="lic-expiry-label">Never expires</span></div>`;
+            }
+            let specDetailHtml = '';
+            if (l.plan === 'monthly_per_spec' && specEntries.length > 0) {
+                const rows = specEntries.map(s => {
+                    const expDate = s.expiresAt ? new Date(s.expiresAt) : null;
+                    const isExpired = s.isExpired;
+                    const daysLeft = expDate && !isExpired ? Math.max(0, Math.ceil((expDate - now) / 86400000)) : 0;
+                    const rowCls = isExpired ? 'lic-spec-row--expired' : 'lic-spec-row--active';
+                    const statusIcon = isExpired
+                        ? `<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#ff6464" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>`
+                        : `<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#00DDB3" stroke-width="2"><path d="M22 11.08V12a10 10 0 11-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>`;
+                    const expiryText = isExpired
+                        ? `<span class="lic-spec-exp-text lic-spec-exp-text--expired">Expired</span>`
+                        : s.expiresAt
+                        ? `<span class="lic-spec-exp-text">Expires ${expDate.toLocaleDateString()} <span class="lic-spec-days">(${daysLeft}d left)</span></span>`
+                        : `<span class="lic-spec-exp-text">Pending (bind to start)</span>`;
+                    const miniBarPct = isExpired ? 0 : s.expiresAt && s.addedAt
+                        ? Math.max(0, Math.min(100, Math.round(((expDate - now) / (expDate - new Date(s.addedAt))) * 100)))
+                        : 100;
+                    const miniBarCls = miniBarPct < 20 ? 'lic-mini-bar--danger' : miniBarPct < 50 ? 'lic-mini-bar--warn' : 'lic-mini-bar--ok';
+                    return `<div class="lic-spec-row ${rowCls}">
+                        <div class="lic-spec-row-left">${statusIcon}<span class="lic-spec-row-label">${esc(s.label)}</span></div>
+                        <div class="lic-spec-row-right">${expiryText}<div class="lic-mini-bar"><div class="lic-mini-bar-fill ${miniBarCls}" style="width:${miniBarPct}%"></div></div></div>
+                    </div>`;
+                }).join('');
+                specDetailHtml = `<div class="lic-spec-detail">
+                    <div class="lic-spec-detail-header">
+                        <span class="lic-spec-detail-title">Specializations</span>
+                        <div class="lic-spec-detail-counts">
+                            <span class="lic-spec-count lic-spec-count--active">${activeSpecs.length} active</span>
+                            ${expiredSpecs.length > 0 ? `<span class="lic-spec-count lic-spec-count--expired">${expiredSpecs.length} expired</span>` : ''}
+                            </div>
+                    </div>
+                    <div class="lic-spec-detail-rows">${rows}</div>
+                        </div>`;
+            } else if (l.plan === 'monthly_per_spec' && specEntries.length === 0) {
+                specDetailHtml = `<div class="lic-spec-detail"><div class="lic-spec-detail-header"><span class="lic-spec-detail-title">Specializations</span></div><div class="lic-spec-detail-rows"><div class="lic-spec-row lic-spec-row--empty">No specs assigned</div></div></div>`;
+            }
+            let simpleSpecsHtml = '';
+            if (l.plan !== 'monthly_per_spec') {
+                simpleSpecsHtml = `<div class="lic-card-specs-simple"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--adm-text-3)" stroke-width="2"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg><span>All Specializations</span></div>`;
+            }
+                const boundBadge = l.isBound
+                ? `<span class="lic-bound-badge is-bound"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10 13a5 5 0 007.54.54l3-3a5 5 0 00-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 00-7.54-.54l-3 3a5 5 0 007.07 7.07l1.71-1.71"/></svg>Bound</span>`
+                : `<span class="lic-bound-badge is-unbound"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10 13a5 5 0 007.54.54l3-3a5 5 0 00-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 00-7.54-.54l-3 3a5 5 0 007.07 7.07l1.71-1.71"/></svg>Unbound</span>`;
+            const initials = email ? email.substring(0, 2).toUpperCase() : (l.plan || '?').substring(0, 2).toUpperCase();
+                const statusCls = status === 'active' ? 'status-ok' : status === 'disabled' ? 'status-bad' : 'status-warn';
+            return `<div class="lic-card ${statusCls === 'status-bad' ? 'lic-card--disabled' : statusCls === 'status-warn' ? 'lic-card--expired' : ''}" data-key="${esc(l.key)}">
+                    <div class="lic-card-header">
+                        <div class="lic-card-header-left">
+                        <div class="lic-card-check"><input type="checkbox" class="lic-check-input admin-row-check" data-license-check="${esc(l.key)}" ${checked} id="lic-cb-${esc(l.key)}"><label class="lic-check-label" for="lic-cb-${esc(l.key)}"></label></div>
+                        <div class="lic-avatar ${statusCls === 'status-ok' ? 'lic-avatar--active' : statusCls === 'status-warn' ? 'lic-avatar--expired' : 'lic-avatar--disabled'}">${esc(initials)}</div>
+                            <div class="lic-card-identity">
+                            <div class="lic-card-key"><code class="lic-key-code">${highlight(l.key, q)}</code><button class="lic-copy-btn" data-copy="${esc(l.key)}" title="Copy key"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg></button></div>
+                            <div class="lic-card-meta">${email ? `<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg><span>${highlight(emailDisplay, q)}</span>` : `<span style="color:var(--adm-text-3)">No email</span>`}</div>
+                            </div>
+                        </div>
+                        <div class="lic-card-header-right">
+                            <span class="lic-plan-badge ${planCls}">${esc(planLabel)}</span>
+                            ${boundBadge}
+                            <span class="admin-pill ${status === 'active' ? 'ok' : status === 'disabled' ? 'bad' : 'warn'}">${esc(status)}</span>
+                        </div>
+                    </div>
+                ${specDetailHtml || simpleSpecsHtml}
+                    ${expiryBar}
+                    <div class="lic-card-footer">
+                        <div class="lic-card-actions">
+                        <button class="lic-action-btn" data-act="toggle" title="Toggle active" ${w ? '' : 'disabled'}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="1" y="5" width="22" height="14" rx="7"/><circle cx="${l.active ? '16' : '8'}" cy="12" r="3"/></svg>Toggle</button>
+                        <button class="lic-action-btn" data-act="extend" title="+1 month" ${w ? '' : 'disabled'}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>+1 Month</button>
+                        <button class="lic-action-btn" data-act="reset" title="Reset HWID" ${w ? '' : 'disabled'}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 102.13-9.36L1 10"/></svg>Reset HWID</button>
+                        <button class="lic-action-btn lic-action-danger" data-act="delete" title="Delete" ${w ? '' : 'disabled'}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg>Delete</button>
+                        <button class="lic-action-btn" data-act="resend-email" title="Resend Email" ${w ? '' : 'disabled'}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>Email</button>
+                        </div>
+                    </div>
+                </div>`;
+        }).join('');
     }
 
     async function loadLicenses() {
@@ -731,15 +927,24 @@ document.addEventListener('DOMContentLoaded', () => {
             await adminFetch(`/api/admin/licenses/${encodeURIComponent(key)}/reset-hwid`, { method: 'POST' });
         } else if (act === 'delete') {
             await adminFetch(`/api/admin/licenses/${encodeURIComponent(key)}/delete`, { method: 'POST' });
+        } else if (act === 'resend-email') {
+            const result = await adminFetch(`/api/admin/licenses/${encodeURIComponent(key)}/resend-email`, { method: 'POST' });
+            window.adminToast(result.email ? `Email sent to ${result.email}` : 'Email sent', 'success');
         }
     }
 
     async function loadConfig() {
         try {
-            const res = await fetch('/api/specs');
+            const res = await fetch('/api/specs', { cache: 'no-store' });
             const data = await res.json();
             if (configPriceInput) {
                 configPriceInput.value = data.pricePerSpecUsdPerMonth || 6;
+            }
+            if (configPlanMonthly) {
+                configPlanMonthly.value = data.priceMonthlyAll || 30;
+            }
+            if (configPlan3Month) {
+                configPlan3Month.value = data.price3MonthAll || 75;
             }
             if (Array.isArray(data.specs)) {
                 specsMap.clear();
@@ -1026,7 +1231,11 @@ document.addEventListener('DOMContentLoaded', () => {
                 await adminFetch('/api/admin/config/price', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ price: Number(configPriceInput.value) }),
+                    body: JSON.stringify({ 
+                        price: Number(configPriceInput.value),
+                        priceMonthlyAll: Number(configPlanMonthly.value),
+                        price3MonthAll: Number(configPlan3Month.value)
+                    }),
                 });
                 if (updateConfigMsg) updateConfigMsg.textContent = 'Configuration saved!';
                 await refreshAll();
@@ -1320,6 +1529,21 @@ document.addEventListener('DOMContentLoaded', () => {
             tab.classList.toggle('is-active', (tab.getAttribute('data-view') || '') === state.savedViews.licenses);
         });
     }
+
+    // Orders Filter Tabs
+    const ordTabs = document.querySelectorAll('.ord-tab');
+    if (ordTabs.length > 0) {
+        ordTabs.forEach(tab => {
+            tab.addEventListener('click', () => {
+                const view = tab.getAttribute('data-view') || '';
+                ordTabs.forEach(t => t.classList.remove('is-active'));
+                tab.classList.add('is-active');
+                if (ordersStatus) ordersStatus.value = view;
+                loadOrders().catch(() => {});
+            });
+        });
+    }
+
     ordersSearch.addEventListener('input', () => {
         loadOrders().catch(() => {});
     });
@@ -1401,13 +1625,14 @@ document.addEventListener('DOMContentLoaded', () => {
             }
             return;
         }
-        // Support both old .admin-action-btn and new .lic-action-btn
-        const btn = e.target.closest('.admin-action-btn, .lic-action-btn');
+        // Support .admin-action-btn, .lic-action-btn (cards), and .lt-act-btn (table)
+        const btn = e.target.closest('.admin-action-btn, .lic-action-btn, .lt-act-btn');
         if (!btn) return;
         const card = e.target.closest('[data-key]');
         if (!card) return;
         const key = card.getAttribute('data-key');
         const act = btn.getAttribute('data-act');
+        if (!act) return; // skip expand toggle etc.
         const proceed = async () => {
             btn.disabled = true;
             try {
@@ -1443,6 +1668,21 @@ document.addEventListener('DOMContentLoaded', () => {
         createPlan.addEventListener('change', syncCreatePlanInputs);
     }
     syncCreatePlanInputs();
+
+    // License view toggle (table / cards)
+    const viewToggle = document.getElementById('licViewToggle');
+    if (viewToggle) {
+        const btns = viewToggle.querySelectorAll('.lic-view-btn');
+        const setActive = (mode) => {
+            licenseViewMode = mode;
+            localStorage.setItem('adminLicView', mode);
+            btns.forEach(b => b.classList.toggle('is-active', b.dataset.view === mode));
+            renderLicenses();
+        };
+        btns.forEach(b => b.addEventListener('click', () => setActive(b.dataset.view)));
+        // Sync initial state
+        btns.forEach(b => b.classList.toggle('is-active', b.dataset.view === licenseViewMode));
+    }
 
     initSectionNavigation();
 
@@ -1534,7 +1774,8 @@ document.addEventListener('DOMContentLoaded', () => {
     function connectWebSocket() {
         if (ws) { try { ws.close(); } catch(_) {} }
         const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
-        const url = `${protocol}//${location.host}/ws/admin`;
+        // Pass admin token for server-side authentication
+        const url = `${protocol}//${location.host}/ws/admin?token=${encodeURIComponent(token || '')}`;
         ws = new WebSocket(url);
 
         ws.onopen = () => {
